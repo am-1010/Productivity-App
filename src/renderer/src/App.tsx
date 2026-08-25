@@ -1,43 +1,37 @@
-import Versions from './components/Versions'
-import electronLogo from './assets/electron.svg'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import TodayView, { type Task } from './TodayView'
+
+// Fake tasks just so we can SEE the design. Real data comes later from the database.
+// Times are minutes-from-midnight: 11:30 is 11*60+30.
+const SAMPLE_TASKS: Task[] = [
+  { id: '1', title: 'Design review with Sam', project: 'OneView', start: 11 * 60 + 30, end: 12 * 60 + 15 },
+  { id: '2', title: 'Deep work: OAuth spike', start: 14 * 60, end: 16 * 60 },
+  { id: '3', title: 'Reply to Sam re: design', source: 'gmail' },
+  { id: '4', title: 'Finish OAuth loopback script', project: 'OneView v1a' }
+]
 
 function App(): React.JSX.Element {
-  const ipcHandle = (): void => window.electron.ipcRenderer.send('ping')
-  const [reply, setReply] = useState('')
-  const handlePing = (): void => {
-    window.api.ping().then((value) => setReply(value))
-  }
+  // The current time, so the "now" line on the timeline stays live.
+  const [now, setNow] = useState(() => {
+    const d = new Date()
+    return d.getHours() * 60 + d.getMinutes()
+  })
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const d = new Date()
+      setNow(d.getHours() * 60 + d.getMinutes())
+    }, 30_000)
+    return () => clearInterval(id)
+  }, [])
 
   return (
-    <>
-      <img alt="logo" className="logo" src={electronLogo} />
-      <div className="creator">Powered by electron-vite</div>
-      <div className="text">
-        Build an Electron app with <span className="react">React</span>
-        &nbsp;and <span className="ts">TypeScript</span>
-      </div>
-      <p className="tip">
-        Please try pressing <code>F12</code> to open the devTool
-      </p>
-      <div className="actions">
-        <div className="action">
-          <a href="https://electron-vite.org/" target="_blank" rel="noreferrer">
-            Documentation
-          </a>
-        </div>
-        <div className="action">
-          <a target="_blank" rel="noreferrer" onClick={ipcHandle}>
-            Send IPC
-          </a>
-        </div>
-        <div className="action">
-          <button onClick={handlePing}>Ping main</button>
-          <p>Reply: {reply}</p>
-        </div>
-      </div>
-      <Versions></Versions>
-    </>
+    <TodayView
+      date={new Date()}
+      tasks={[]}
+      counts={{ today: SAMPLE_TASKS.length, inbox: 0 }}
+      nowMinutes={now}
+    />
   )
 }
 
