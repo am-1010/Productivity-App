@@ -2,6 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { getTasks, addTask, toggleTask } from './db'
 
 function createWindow(): void {
   // Create the browser window.
@@ -54,6 +55,9 @@ app.whenReady().then(() => {
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
   ipcMain.handle('app:ping', () => 'pong from main')
+  ipcMain.handle('tasks:get', () => getTasks())
+  ipcMain.handle('tasks:add', (_event, title: string) => addTask(title))
+  ipcMain.handle('tasks:toggle', (_event, id: string) => toggleTask(id))
 
   createWindow()
 

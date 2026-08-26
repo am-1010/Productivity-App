@@ -3,7 +3,10 @@ import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
 const api = {
-  ping() {return ipcRenderer.invoke('app:ping')}
+  ping: () => ipcRenderer.invoke('app:ping'),
+  getTasks: () => ipcRenderer.invoke('tasks:get'),
+  addTask: (title: string) => ipcRenderer.invoke('tasks:add', title),
+  toggleTask: (id: string) => ipcRenderer.invoke('tasks:toggle', id)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
