@@ -32,7 +32,7 @@ function App(): React.JSX.Element {
       tasks={tasks}
       counts={{ today: tasks.length, inbox: 0 }}
       nowMinutes={now}
-      onNewTask={() => window.api.addTask('New task').then(load)}
+      onNewTask={(input) => window.api.addTask(input).then(load)}
       onToggleTask={(id) => window.api.toggleTask(id).then(load)}
     />
   )

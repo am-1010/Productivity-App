@@ -15,7 +15,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS task (
     day TEXT,
     start_min INTEGER,
     end_min INTEGER,
-    done_at INTEGER
+    done_at INTEGER,
+    notes TEXT
     );
     
     CREATE INDEX IF NOT EXISTS task_day_start ON task(day, start_min);
@@ -46,8 +47,8 @@ export function getTasks() {
     }))
 }
 
-export function addTask(title: string) {
-    db.prepare('INSERT INTO task (id, title) VALUES (?, ?)').run(randomUUID(), title)
+export function addTask(input: { title: string; day?: string; notes?: string}) {
+    db.prepare('INSERT INTO task (id, title, day, notes) VALUES (?, ?, ?, ?)').run(randomUUID(), input.title, input.day ?? null, input.notes ?? null)
 }
 
 export function toggleTask(id: string) {

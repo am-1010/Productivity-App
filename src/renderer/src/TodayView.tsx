@@ -27,7 +27,8 @@
  *      ORDER BY start_min IS NULL, start_min;
  */
 
-import React, { useMemo } from 'react';
+import { isUndefined } from 'node:util';
+import React, { useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 
 /* ------------------------------------------------------------------ tokens */
@@ -87,7 +88,7 @@ export interface TodayViewProps {
   nowMinutes: number;
   onToggleTask?: (id: string) => void;
   onOpenTask?: (id: string) => void;
-  onNewTask?: () => void;
+  onNewTask?: (input: { title: string; day?: string; notes?: string }) => void;
   onNavigate?: (key: NavKey) => void;
   /** Earliest hour the rail will ever show when the day starts late. */
   railFloorHour?: number;
@@ -594,6 +595,10 @@ export const TodayView: React.FC<TodayViewProps> = ({
   railFloorHour = 7,
   railEndHour = 17,
 }) => {
+  const [adding, setAdding] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [day, setDay] = useState('')
+  const [notes, setNotes] = useState('')
   const open = tasks.filter((task) => !task.done);
   const current = open.find(
     (task) => isBlocked(task) && nowMinutes >= task.start && nowMinutes < task.end,
@@ -603,6 +608,30 @@ export const TodayView: React.FC<TodayViewProps> = ({
   const isEmpty = open.length === 0;
   /** Once anything exists, empty sections explain themselves instead of vanishing. */
   const showSections = !isEmpty;
+
+  const fieldStyle: React.CSSProperties = {
+    width: '100%',
+    boxSizing: 'border-box',
+    background: 'transparent',              // no fill
+    border: 'none',
+    borderBottom: '1px solid rgba(255,255,255,.06)', // just a hairline underline
+    outline: 'none',
+    padding: '9px 2px',
+    color: t.text1,
+    fontFamily: t.serif,
+    fontSize: 13,
+    colorScheme: 'dark'
+  }
+
+  const submitNewTask = (): void => {
+    if (!draft.trim()) return
+    onNewTask?.({
+      title: draft.trimEnd(),
+      day: day || undefined,
+      notes: notes.trim() || undefined
+    })
+    setDraft(''); setDay(''); setNotes(''); setAdding(false)
+  }
 
   return (
     <div
@@ -645,22 +674,69 @@ export const TodayView: React.FC<TodayViewProps> = ({
               Today
             </h1>
           </div>
-          <button
-            onClick={onNewTask}
-            style={{
-              padding: '8px 16px',
-              border: 'none',
-              borderRadius: 8,
-              background: t.textMax,
-              color: t.shell,
-              fontFamily: t.serif,
-              fontSize: 12.5,
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            New task
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setAdding((v) => !v)}
+              style={{
+                padding: '8px 16px', border: 'none', borderRadius: 8,
+                background: t.textMax, color: t.shell, fontFamily: t.serif,
+                fontSize: 12.5, fontWeight: 600, cursor: 'pointer'
+              }}
+            >
+              New task
+            </button>
+
+            {adding && (
+              <div
+                style={{
+                  position: 'absolute',        // float, don't take up layout space
+                  top: 'calc(100% + 8px)',     // 8px below the button
+                  right: 0,                    // align to the button's right edge
+                  width: 300,
+                  zIndex: 20,                  // sit above the page content
+                  background: 'rgba(255,255,255,.025)',
+                  borderRadius: 12,
+                  padding: '16px 16px 12px',
+                  boxShadow: '0 12px 32px rgba(0,0,0,.45)'
+                }}
+              >
+                <input
+                  autoFocus
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') submitNewTask()
+                    if (e.key === 'Escape') setAdding(false)
+                  }}
+                  placeholder="Task title…"
+                  style={{ ...fieldStyle, fontSize: 16 }}
+                />
+                <input
+                  type="date"
+                  value={day}
+                  onChange={(e) => setDay(e.target.value)}
+                  style={{ ...fieldStyle, fontFamily: t.mono, fontSize: 12.5; color: t.text4 }}
+                />
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Notes…"
+                  rows={3}
+                  style={{ ...fieldStyle, borderBottom: 'none', resize: 'vertical' }}
+                />
+                <button
+                  onClick={submitNewTask}
+                  style={{
+                    padding: '8px 16px', border: 'none', borderRadius: 8,
+                    background: t.textMax, color: t.shell, fontFamily: t.serif,
+                    fontSize: 12.5, fontWeight: 600, cursor: 'pointer'
+                  }}
+                >
+                  Add task
+                </button>
+              </div>
+            )}
+          </div>
         </header>
 
         <div style={{ display: 'flex', gap: 26, padding: '16px 34px 0' }}>
@@ -760,7 +836,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
             </>
           )}
 
-          {isEmpty && <DayEmpty inboxCount={counts?.inbox} onNewTask={onNewTask} />}
+          {isEmpty && <DayEmpty inboxCount={counts?.inbox} onNewTask={() => setAdding(true)} />}
         </div>
       </main>
 

@@ -18,7 +18,7 @@ declare global {
     api: {
       ping: () => Promise<string>
       getTasks: () => Promise<Task[]>
-      addTask: (title: string) => Promise<void>
+      addTask: (input: { title: string; day?: string; notes?: string}) => Promise<void>
       toggleTask: (id: string) => Promise<void>
     }
   }
