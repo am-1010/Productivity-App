@@ -27,7 +27,6 @@
  *      ORDER BY start_min IS NULL, start_min;
  */
 
-import { isUndefined } from 'node:util';
 import React, { useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 
@@ -715,7 +714,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
                   type="date"
                   value={day}
                   onChange={(e) => setDay(e.target.value)}
-                  style={{ ...fieldStyle, fontFamily: t.mono, fontSize: 12.5; color: t.text4 }}
+                  style={{ ...fieldStyle, fontFamily: t.mono, fontSize: 12.5, color: t.text4 }}
                 />
                 <textarea
                   value={notes}
