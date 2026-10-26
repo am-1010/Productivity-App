@@ -63,10 +63,10 @@ const eyebrow: CSSProperties = {
 
 /* ------------------------------------------------------------------- types */
 
-type TaskSource = 'gmail' | 'slack' | 'linear'
+export type TaskSource = 'gmail' | 'slack' | 'linear'
 
 /** A row from `task`, already narrowed to today's view. */
-interface Task {
+export interface Task {
   id: string
   title: string
   project?: string
@@ -79,7 +79,7 @@ interface Task {
   done?: boolean
 }
 
-interface TodayViewProps {
+export interface TodayViewProps {
   date: Date
   tasks: Task[]
   /** Counts for the tab strip; supplied by the caller so this view stays dumb. */
@@ -98,7 +98,7 @@ interface TodayViewProps {
   railEndHour?: number
 }
 
-type NavKey = 'today' | 'inbox' | 'week' | 'search' | 'account'
+export type NavKey = 'today' | 'inbox' | 'week' | 'search' | 'account'
 
 /* --------------------------------------------------------------- utilities */
 
