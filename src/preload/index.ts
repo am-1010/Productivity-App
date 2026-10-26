@@ -4,9 +4,11 @@ import { electronAPI } from '@electron-toolkit/preload'
 // Custom APIs for renderer
 const api = {
   ping: () => ipcRenderer.invoke('app:ping'),
-  getTasks: () => ipcRenderer.invoke('tasks:get'),
-  addTask: (input: { title: string; day?: string; notes?: string }) => ipcRenderer.invoke('tasks:add', input),
-  toggleTask: (id: string) => ipcRenderer.invoke('tasks:toggle', id)
+  getTasks: (day: string) => ipcRenderer.invoke('tasks:get', day),
+  addTask: (input: { title: string; day?: string; notes?: string }) =>
+    ipcRenderer.invoke('tasks:add', input),
+  toggleTask: (id: string) => ipcRenderer.invoke('tasks:toggle', id),
+  deleteTask: (id: string) => ipcRenderer.invoke('tasks:delete', id)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

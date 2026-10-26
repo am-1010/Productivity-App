@@ -7,6 +7,8 @@ interface Task {
   title: string
   project?: string
   source?: TaskSource
+  day?: string
+  notes?: string
   start?: number
   end?: number
   done?: boolean
@@ -17,9 +19,10 @@ declare global {
     electron: ElectronAPI
     api: {
       ping: () => Promise<string>
-      getTasks: () => Promise<Task[]>
-      addTask: (input: { title: string; day?: string; notes?: string}) => Promise<void>
+      getTasks: (day: string) => Promise<Task[]>
+      addTask: (input: { title: string; day?: string; notes?: string }) => Promise<void>
       toggleTask: (id: string) => Promise<void>
+      deleteTask: (id: string) => Promise<void>
     }
   }
 }
