@@ -56,7 +56,7 @@ app.whenReady().then(() => {
   ipcMain.on('ping', () => console.log('pong'))
   ipcMain.handle('app:ping', () => 'pong from main')
   ipcMain.handle('tasks:get', (_event, day: string) => getTasksForDay(day))
-  ipcMain.handle('tasks:add', (_event, input: { title: string; day?: string; notes?: string }) =>
+  ipcMain.handle('tasks:add', (_event, input: { title: string; day?: string; notes?: string; start?: number; end?: number }) =>
     addTask(input)
   )
   ipcMain.handle('tasks:toggle', (_event, id: string) => toggleTask(id))

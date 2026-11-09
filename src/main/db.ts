@@ -93,12 +93,14 @@ export function getTasksForDay(day: string): Task[] {
   return rows.map(toTask)
 }
 
-export function addTask(input: { title: string; day?: string; notes?: string }): void {
-  db.prepare('INSERT INTO task (id, title, day, notes) VALUES (?, ?, ?, ?)').run(
+export function addTask(input: { title: string; day?: string; notes?: string; start?: number ; end?: number }): void {
+  db.prepare('INSERT INTO task (id, title, day, notes, start_min, end_min) VALUES (?, ?, ?, ?, ?, ?)').run(
     randomUUID(),
     input.title,
     input.day ?? null,
-    input.notes ?? null
+    input.notes ?? null,
+    input.start ?? null,
+    input.end ?? null
   )
 }
 

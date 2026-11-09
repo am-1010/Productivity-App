@@ -89,7 +89,7 @@ export interface TodayViewProps {
   nowMinutes: number
   onToggleTask?: (id: string) => void
   onOpenTask?: (id: string) => void
-  onNewTask?: (input: { title: string; day?: string; notes?: string }) => Promise<void>
+  onNewTask?: (input: { title: string; day?: string; notes?: string; start?: number; end?: number }) => Promise<void>
   onDeleteTask?: (id: string) => void
   onNavigate?: (key: NavKey) => void
   /** Earliest hour the rail will ever show when the day starts late. */
@@ -105,7 +105,7 @@ export type NavKey = 'today' | 'inbox' | 'week' | 'search' | 'account'
 const HOUR_PX = 54
 
 const fmt = (min: number): string =>
-  `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`
+  `${String(Math.floor(min / 60) % 24).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`
 
 const fmtRange = (start: number, end?: number): string =>
   end == null ? fmt(start) : `${fmt(start)} – ${fmt(end)}`
@@ -122,20 +122,35 @@ function railRange(
   floorHour = 7,
   endHour = 17
 ): { startHour: number; endHour: number } {
-  const earliest = tasks
-    .filter(isBlocked)
-    .reduce<number | null>(
-      (min, task) => (min == null || task.start < min ? task.start : min),
-      null
-    )
+  const blocked = tasks.filter(isBlocked)
+  const earliest = blocked.reduce<number | null>(
+    (min, task) => (min == null || task.start < min ? task.start : min),
+    null
+  )
+  const latest = blocked.reduce<number | null>(
+    (max, task) => (max == null || task.start > max ? task.start : max),
+    null
+  )
   const startHour = earliest == null ? floorHour : Math.min(floorHour, Math.floor(earliest / 60))
-  return { startHour, endHour: Math.max(endHour, startHour + 1) }
+  const lastHour = latest == null ? endHour : Math.max(endHour, Math.ceil(latest / 60))
+  return { startHour, endHour: Math.max(lastHour, startHour + 1) }
 }
 
 /** Total minutes of blocked time, for the "4h 15m blocked" summary. */
 function blockedMinutes(tasks: Task[]): number {
   return tasks.filter(isBlocked).reduce((sum, task) => sum + (task.end - task.start), 0)
 }
+
+/** 'HH:MM' from <input type="time"> → minutes from midnight. Empty → undefined. */
+const toMinutes = (hhmm: string): number | undefined => {
+  if (!hhmm) return undefined
+  const [h, m] = hhmm.split(':').map(Number)
+  return h * 60 + m
+}
+
+/** Local calendar day as 'YYYY-MM-DD'. Not toISOString(), which is UTC. */
+const localDay = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 const fmtDuration = (min: number): string => {
   const h = Math.floor(min / 60)
@@ -537,7 +552,7 @@ const DayRail: React.FC<{ tasks: Task[]; nowMinutes: number; floor?: number; end
   const nowVisible = nowTop >= 0 && nowTop <= hours * HOUR_PX
 
   return (
-    <aside style={{ width: 330, flex: 'none', padding: '26px 22px', position: 'relative' }}>
+    <aside style={{ width: 330, flex: 'none', padding: '26px 22px', position: 'relative', overflowY: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <div style={{ ...eyebrow, fontSize: 11, color: t.text4 }}>Time</div>
         <div style={{ font: `400 11px ${t.mono}`, color: hasBlocks ? t.textMax : t.text6 }}>
@@ -558,7 +573,7 @@ const DayRail: React.FC<{ tasks: Task[]; nowMinutes: number; floor?: number; end
               color: t.text5
             }}
           >
-            {String(startHour + i).padStart(2, '0')}
+            {String((startHour + i) % 24).padStart(2, '0')}
           </div>
         ))}
 
@@ -645,6 +660,8 @@ export const TodayView: React.FC<TodayViewProps> = ({
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState('')
   const [day, setDay] = useState('')
+  const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime] = useState('')
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
   const open = tasks.filter((task) => !task.done)
@@ -675,10 +692,28 @@ export const TodayView: React.FC<TodayViewProps> = ({
   const submitNewTask = async (): Promise<void> => {
     const title = draft.trim()
     if (!title || !onNewTask) return
+
+    const start = toMinutes(startTime)
+    let end = toMinutes(endTime)
+    if (end != null && start == null) {
+      setError ('Set a start time too.')
+      return
+    }
+
+    // A start with no end gets a 30-minute block.
+    if (start != null && end == null) end = start + 30
+    if (start != null && end != null && end === start) {
+      setError('End time must be after the start time.')
+      return
+    }
+    if (start != null && end != null && end < start) end += 24 * 60
+
     try {
-      await onNewTask({ title, day: day || undefined, notes: notes.trim() || undefined })
+      await onNewTask({ title, day: day || (start != null? localDay(date) : undefined), notes: notes.trim() || undefined , start, end})
       setDraft('')
       setDay('')
+      setStartTime('')
+      setEndTime('')
       setNotes('')
       setError(null)
       setAdding(false)
@@ -777,6 +812,22 @@ export const TodayView: React.FC<TodayViewProps> = ({
                   onChange={(e) => setDay(e.target.value)}
                   style={{ ...fieldStyle, fontFamily: t.mono, fontSize: 12.5, color: t.text4 }}
                 />
+                <div style={{ display: 'flex', gap: 12}}>
+                  <input
+                    type="time"
+                    aria-label="Start time"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    style={{ ...fieldStyle, minWidth: 0, fontFamily: t.mono, fontSize: 12.5, color: t.text4 }}
+                  />
+                  <input
+                    type="time"
+                    aria-label="End time"
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
+                    style={{ ...fieldStyle, minWidth: 0, fontFamily: t.mono, fontSize: 12.5, color: t.text4 }}
+                  />
+                </div>  
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
@@ -788,7 +839,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
                   <div
                     style={{ margin: '4px 0 10px', font: `400 11px ${t.mono}`, color: '#e5484d' }}
                   >
-                    Couldn’t save: {error}
+                    {error}
                   </div>
                 )}
                 <button
