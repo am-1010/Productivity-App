@@ -82,14 +82,21 @@ export interface Task {
 export interface TodayViewProps {
   date: Date
   tasks: Task[]
+  upcoming?: Task[]
   /** Counts for the tab strip; supplied by the caller so this view stays dumb. */
-  counts?: { today: number; inbox: number }
+  counts?: { today: number; inbox: number; upcoming?: number }
   activeNav?: NavKey
   /** Minutes from midnight. Pass a ticking value to animate the now-line. */
   nowMinutes: number
   onToggleTask?: (id: string) => void
   onOpenTask?: (id: string) => void
-  onNewTask?: (input: { title: string; day?: string; notes?: string; start?: number; end?: number }) => Promise<void>
+  onNewTask?: (input: {
+    title: string
+    day?: string
+    notes?: string
+    start?: number
+    end?: number
+  }) => Promise<void>
   onDeleteTask?: (id: string) => void
   onNavigate?: (key: NavKey) => void
   /** Earliest hour the rail will ever show when the day starts late. */
@@ -552,7 +559,15 @@ const DayRail: React.FC<{ tasks: Task[]; nowMinutes: number; floor?: number; end
   const nowVisible = nowTop >= 0 && nowTop <= hours * HOUR_PX
 
   return (
-    <aside style={{ width: 330, flex: 'none', padding: '26px 22px', position: 'relative', overflowY: 'auto' }}>
+    <aside
+      style={{
+        width: 330,
+        flex: 'none',
+        padding: '26px 22px',
+        position: 'relative',
+        overflowY: 'auto'
+      }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <div style={{ ...eyebrow, fontSize: 11, color: t.text4 }}>Time</div>
         <div style={{ font: `400 11px ${t.mono}`, color: hasBlocks ? t.textMax : t.text6 }}>
@@ -641,11 +656,69 @@ const DayRail: React.FC<{ tasks: Task[]; nowMinutes: number; floor?: number; end
 
 /* ------------------------------------------------------------------- view */
 
+/** 'YYYY-MM-DD' → a heading like "Tomorrow" or "Thursday, 12 November". */
+const dayHeading = (day: string, today: Date): string => {
+  const [y, m, d] = day.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
+  if (date.getTime() === tomorrow.getTime()) return 'Tomorrow'
+  return date.toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    ...(y !== today.getFullYear() ? { year: 'numeric' } : {})
+  })
+}
+
+const UpcomingList: React.FC<{
+  tasks: Task[]
+  today: Date
+  onToggle?: (id: string) => void
+  onOpen?: (id: string) => void
+  onDelete?: (id: string) => void
+}> = ({ tasks, today, onToggle, onOpen, onDelete }) => {
+  if (tasks.length === 0) {
+    return (
+      <EmptyNote hint="Give a task a date in New task to see it here.">
+        Nothing coming up.
+      </EmptyNote>
+    )
+  }
+
+  // Tasks arrive sorted by day, so each day is one run of consecutive tasks.
+  const groups: { day: string; tasks: Task[] }[] = []
+  for (const task of tasks) {
+    const last = groups[groups.length - 1]
+    if (last && last.day === task.day) last.tasks.push(task)
+    else groups.push({ day: task.day ?? '', tasks: [task] })
+  }
+
+  return (
+    <>
+      {groups.map((group, i) => (
+        <div key={group.day} style={{ marginTop: i === 0 ? 0 : 14 }}>
+          <div style={{ ...eyebrow, marginBottom: 8 }}>{dayHeading(group.day, today)}</div>
+          {group.tasks.map((task) => (
+            <TaskRow
+              key={task.id}
+              task={task}
+              onToggle={() => onToggle?.(task.id)}
+              onOpen={() => onOpen?.(task.id)}
+              onDelete={() => onDelete?.(task.id)}
+            />
+          ))}
+        </div>
+      ))}
+    </>
+  )
+}
+
 const TABS = ['Today', 'Inbox', 'Upcoming', 'Done'] as const
 
 export const TodayView: React.FC<TodayViewProps> = ({
   date,
   tasks,
+  upcoming = [],
   counts,
   activeNav = 'today',
   nowMinutes,
@@ -658,6 +731,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
   railEndHour = 17
 }) => {
   const [adding, setAdding] = useState(false)
+  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>('Today')
   const [draft, setDraft] = useState('')
   const [day, setDay] = useState('')
   const [startTime, setStartTime] = useState('')
@@ -696,7 +770,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
     const start = toMinutes(startTime)
     let end = toMinutes(endTime)
     if (end != null && start == null) {
-      setError ('Set a start time too.')
+      setError('Set a start time too.')
       return
     }
 
@@ -709,7 +783,13 @@ export const TodayView: React.FC<TodayViewProps> = ({
     if (start != null && end != null && end < start) end += 24 * 60
 
     try {
-      await onNewTask({ title, day: day || (start != null? localDay(date) : undefined), notes: notes.trim() || undefined , start, end})
+      await onNewTask({
+        title,
+        day: day || (start != null ? localDay(date) : undefined),
+        notes: notes.trim() || undefined,
+        start,
+        end
+      })
       setDraft('')
       setDay('')
       setStartTime('')
@@ -812,22 +892,34 @@ export const TodayView: React.FC<TodayViewProps> = ({
                   onChange={(e) => setDay(e.target.value)}
                   style={{ ...fieldStyle, fontFamily: t.mono, fontSize: 12.5, color: t.text4 }}
                 />
-                <div style={{ display: 'flex', gap: 12}}>
+                <div style={{ display: 'flex', gap: 12 }}>
                   <input
                     type="time"
                     aria-label="Start time"
                     value={startTime}
                     onChange={(e) => setStartTime(e.target.value)}
-                    style={{ ...fieldStyle, minWidth: 0, fontFamily: t.mono, fontSize: 12.5, color: t.text4 }}
+                    style={{
+                      ...fieldStyle,
+                      minWidth: 0,
+                      fontFamily: t.mono,
+                      fontSize: 12.5,
+                      color: t.text4
+                    }}
                   />
                   <input
                     type="time"
                     aria-label="End time"
                     value={endTime}
                     onChange={(e) => setEndTime(e.target.value)}
-                    style={{ ...fieldStyle, minWidth: 0, fontFamily: t.mono, fontSize: 12.5, color: t.text4 }}
+                    style={{
+                      ...fieldStyle,
+                      minWidth: 0,
+                      fontFamily: t.mono,
+                      fontSize: 12.5,
+                      color: t.text4
+                    }}
                   />
-                </div>  
+                </div>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
@@ -864,19 +956,27 @@ export const TodayView: React.FC<TodayViewProps> = ({
         </header>
 
         <div style={{ display: 'flex', gap: 26, padding: '16px 34px 0' }}>
-          {TABS.map((tab, i) => {
-            const on = i === 0
+          {TABS.map((tab) => {
+            const on = tab === activeTab
+            const enabled = tab === 'Today' || tab === 'Upcoming'
             const count =
-              tab === 'Today' ? counts?.today : tab === 'Inbox' ? counts?.inbox : undefined
+              tab === 'Today'
+                ? counts?.today
+                : tab === 'Inbox'
+                  ? counts?.inbox
+                  : tab === 'Upcoming'
+                    ? counts?.upcoming
+                    : undefined
             return (
               <div
                 key={tab}
+                onClick={enabled ? () => setActiveTab(tab) : undefined}
                 style={{
                   paddingBottom: 12,
                   fontSize: 13,
-                  color: on ? t.text1 : '#919191',
+                  color: on ? t.text1 : enabled ? '#919191' : t.text6,
                   borderBottom: on ? `1.5px solid ${t.markerActive}` : undefined,
-                  cursor: 'pointer'
+                  cursor: enabled ? 'pointer' : 'default'
                 }}
               >
                 {tab}
@@ -901,86 +1001,100 @@ export const TodayView: React.FC<TodayViewProps> = ({
             gap: 2
           }}
         >
-          {current && (
+          {activeTab === 'Upcoming' ? (
+            <UpcomingList
+              tasks={upcoming}
+              today={date}
+              onToggle={onToggleTask}
+              onOpen={onOpenTask}
+              onDelete={onDeleteTask}
+            />
+          ) : (
             <>
-              <div style={{ ...eyebrow, marginBottom: 12 }}>Now</div>
-              <TaskRow
-                task={current}
-                now
-                onToggle={() => onToggleTask?.(current.id)}
-                onDelete={() => onDeleteTask?.(current.id)}
-                onOpen={() => onOpenTask?.(current.id)}
-              />
-              <div style={{ height: 14 }} />
-            </>
-          )}
-
-          {showSections && (
-            <>
-              <div style={{ ...eyebrow, marginBottom: 8 }}>Scheduled</div>
-              {scheduled.length > 0 ? (
-                scheduled.map((task) => (
+              {current && (
+                <>
+                  <div style={{ ...eyebrow, marginBottom: 12 }}>Now</div>
                   <TaskRow
-                    key={task.id}
-                    task={task}
-                    onToggle={() => onToggleTask?.(task.id)}
-                    onOpen={() => onOpenTask?.(task.id)}
-                    onDelete={() => onDeleteTask?.(task.id)}
+                    task={current}
+                    now
+                    onToggle={() => onToggleTask?.(current.id)}
+                    onDelete={() => onDeleteTask?.(current.id)}
+                    onOpen={() => onOpenTask?.(current.id)}
                   />
-                ))
-              ) : (
-                <EmptyNote hint="Drag one onto the rail, or press ⇧⏎ on a task.">
-                  {current ? 'Nothing else blocked today.' : 'No time blocked yet.'}
-                </EmptyNote>
+                  <div style={{ height: 14 }} />
+                </>
               )}
-              <div style={{ height: 14 }} />
 
-              <div
-                style={{
-                  ...eyebrow,
-                  display: 'flex',
-                  alignItems: 'baseline',
-                  justifyContent: 'space-between',
-                  marginBottom: 8
-                }}
-              >
-                <span>Unscheduled</span>
-                {unscheduled.length > 0 && <span style={{ color: t.text6 }}>Drag to block</span>}
-              </div>
-              {unscheduled.length > 0 ? (
-                unscheduled.map((task) => (
-                  <TaskRow
-                    key={task.id}
-                    task={task}
-                    onToggle={() => onToggleTask?.(task.id)}
-                    onOpen={() => onOpenTask?.(task.id)}
-                    onDelete={() => onDeleteTask?.(task.id)}
-                  />
-                ))
-              ) : (
-                <EmptyNote>Everything today has a time.</EmptyNote>
+              {showSections && (
+                <>
+                  <div style={{ ...eyebrow, marginBottom: 8 }}>Scheduled</div>
+                  {scheduled.length > 0 ? (
+                    scheduled.map((task) => (
+                      <TaskRow
+                        key={task.id}
+                        task={task}
+                        onToggle={() => onToggleTask?.(task.id)}
+                        onOpen={() => onOpenTask?.(task.id)}
+                        onDelete={() => onDeleteTask?.(task.id)}
+                      />
+                    ))
+                  ) : (
+                    <EmptyNote hint="Drag one onto the rail, or press ⇧⏎ on a task.">
+                      {current ? 'Nothing else blocked today.' : 'No time blocked yet.'}
+                    </EmptyNote>
+                  )}
+                  <div style={{ height: 14 }} />
+
+                  <div
+                    style={{
+                      ...eyebrow,
+                      display: 'flex',
+                      alignItems: 'baseline',
+                      justifyContent: 'space-between',
+                      marginBottom: 8
+                    }}
+                  >
+                    <span>Unscheduled</span>
+                    {unscheduled.length > 0 && (
+                      <span style={{ color: t.text6 }}>Drag to block</span>
+                    )}
+                  </div>
+                  {unscheduled.length > 0 ? (
+                    unscheduled.map((task) => (
+                      <TaskRow
+                        key={task.id}
+                        task={task}
+                        onToggle={() => onToggleTask?.(task.id)}
+                        onOpen={() => onOpenTask?.(task.id)}
+                        onDelete={() => onDeleteTask?.(task.id)}
+                      />
+                    ))
+                  ) : (
+                    <EmptyNote>Everything today has a time.</EmptyNote>
+                  )}
+                </>
+              )}
+
+              {done.length > 0 && (
+                <>
+                  <div style={{ height: 14 }} />
+                  <div style={{ ...eyebrow, marginBottom: 8 }}>Done</div>
+                  {done.map((task) => (
+                    <TaskRow
+                      key={task.id}
+                      task={task}
+                      onToggle={() => onToggleTask?.(task.id)}
+                      onOpen={() => onOpenTask?.(task.id)}
+                      onDelete={() => onDeleteTask?.(task.id)}
+                    />
+                  ))}
+                </>
+              )}
+
+              {isEmpty && done.length === 0 && (
+                <DayEmpty inboxCount={counts?.inbox} onNewTask={() => setAdding(true)} />
               )}
             </>
-          )}
-
-          {done.length > 0 && (
-            <>
-              <div style={{ height: 14 }} />
-              <div style={{ ...eyebrow, marginBottom: 8 }}>Done</div>
-              {done.map((task) => (
-                <TaskRow
-                  key={task.id}
-                  task={task}
-                  onToggle={() => onToggleTask?.(task.id)}
-                  onOpen={() => onOpenTask?.(task.id)}
-                  onDelete={() => onDeleteTask?.(task.id)}
-                />
-              ))}
-            </>
-          )}
-
-          {isEmpty && done.length === 0 && (
-            <DayEmpty inboxCount={counts?.inbox} onNewTask={() => setAdding(true)} />
           )}
         </div>
       </main>

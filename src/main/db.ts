@@ -93,8 +93,27 @@ export function getTasksForDay(day: string): Task[] {
   return rows.map(toTask)
 }
 
-export function addTask(input: { title: string; day?: string; notes?: string; start?: number ; end?: number }): void {
-  db.prepare('INSERT INTO task (id, title, day, notes, start_min, end_min) VALUES (?, ?, ?, ?, ?, ?)').run(
+export function getUpcomingTasks(day: string): Task[] {
+  const rows = db
+    .prepare(
+      `SELECT * FROM task
+        WHERE day > ?
+        ORDER BY day, start_min IS NULL, start_min`
+    )
+    .all(day) as TaskRow[]
+  return rows.map(toTask)
+}
+
+export function addTask(input: {
+  title: string
+  day?: string
+  notes?: string
+  start?: number
+  end?: number
+}): void {
+  db.prepare(
+    'INSERT INTO task (id, title, day, notes, start_min, end_min) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(
     randomUUID(),
     input.title,
     input.day ?? null,

@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { getTasksForDay, addTask, toggleTask, deleteTask } from './db'
+import { getTasksForDay, getUpcomingTasks, addTask, toggleTask, deleteTask } from './db'
 
 function createWindow(): void {
   // Create the browser window.
@@ -56,8 +56,13 @@ app.whenReady().then(() => {
   ipcMain.on('ping', () => console.log('pong'))
   ipcMain.handle('app:ping', () => 'pong from main')
   ipcMain.handle('tasks:get', (_event, day: string) => getTasksForDay(day))
-  ipcMain.handle('tasks:add', (_event, input: { title: string; day?: string; notes?: string; start?: number; end?: number }) =>
-    addTask(input)
+  ipcMain.handle('tasks:upcoming', (_event, day: string) => getUpcomingTasks(day))
+  ipcMain.handle(
+    'tasks:add',
+    (
+      _event,
+      input: { title: string; day?: string; notes?: string; start?: number; end?: number }
+    ) => addTask(input)
   )
   ipcMain.handle('tasks:toggle', (_event, id: string) => toggleTask(id))
   ipcMain.handle('tasks:delete', (_event, id: string) => deleteTask(id))

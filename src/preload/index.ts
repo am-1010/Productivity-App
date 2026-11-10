@@ -5,6 +5,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 const api = {
   ping: () => ipcRenderer.invoke('app:ping'),
   getTasks: (day: string) => ipcRenderer.invoke('tasks:get', day),
+  getUpcomingTasks: (day: string) => ipcRenderer.invoke('tasks:upcoming', day),
   addTask: (input: { title: string; day?: string; notes?: string; start?: number; end?: number }) =>
     ipcRenderer.invoke('tasks:add', input),
   toggleTask: (id: string) => ipcRenderer.invoke('tasks:toggle', id),

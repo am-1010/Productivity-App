@@ -13,12 +13,17 @@ function App(): React.JSX.Element {
   })
 
   const [tasks, setTasks] = useState<Task[]>([])
+  const [upcoming, setUpcoming] = useState<Task[]>([])
 
-  const load = (): Promise<void> =>
-    window.api
-      .getTasks(localDay(new Date()))
-      .then(setTasks)
+  const load = (): Promise<void> => {
+    const today = localDay(new Date())
+    return Promise.all([window.api.getTasks(today), window.api.getUpcomingTasks(today)])
+      .then(([todayTasks, upcomingTasks]) => {
+        setTasks(todayTasks)
+        setUpcoming(upcomingTasks)
+      })
       .catch((err) => console.error('Failed to load tasks', err))
+  }
 
   useEffect(() => {
     void load()
@@ -36,7 +41,12 @@ function App(): React.JSX.Element {
     <TodayView
       date={new Date()}
       tasks={tasks}
-      counts={{ today: tasks.filter((task) => !task.done).length, inbox: 0 }}
+      upcoming={upcoming}
+      counts={{
+        today: tasks.filter((task) => !task.done).length,
+        inbox: 0,
+        upcoming: upcoming.filter((task) => !task.done).length
+      }}
       nowMinutes={now}
       // No .catch here on purpose: the error goes back to the form so it can show it.
       onNewTask={(input) => window.api.addTask(input).then(load)}
