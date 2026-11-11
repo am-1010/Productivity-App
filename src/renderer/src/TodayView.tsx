@@ -29,6 +29,8 @@
 
 import React, { useMemo, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
+import type { NewTaskInput, Task } from '../../shared/types'
+import { localDay } from './day'
 
 /* ------------------------------------------------------------------ tokens */
 
@@ -63,22 +65,6 @@ const eyebrow: CSSProperties = {
 
 /* ------------------------------------------------------------------- types */
 
-export type TaskSource = 'gmail' | 'slack' | 'linear'
-
-/** A row from `task`, already narrowed to today's view. */
-export interface Task {
-  id: string
-  title: string
-  project?: string
-  source?: TaskSource
-  day?: string
-  notes?: string
-  /** Minutes from midnight. Undefined = unscheduled. */
-  start?: number
-  end?: number
-  done?: boolean
-}
-
 export interface TodayViewProps {
   date: Date
   tasks: Task[]
@@ -90,13 +76,7 @@ export interface TodayViewProps {
   nowMinutes: number
   onToggleTask?: (id: string) => void
   onOpenTask?: (id: string) => void
-  onNewTask?: (input: {
-    title: string
-    day?: string
-    notes?: string
-    start?: number
-    end?: number
-  }) => Promise<void>
+  onNewTask?: (input: NewTaskInput) => Promise<void>
   onDeleteTask?: (id: string) => void
   onNavigate?: (key: NavKey) => void
   /** Earliest hour the rail will ever show when the day starts late. */
@@ -154,10 +134,6 @@ const toMinutes = (hhmm: string): number | undefined => {
   const [h, m] = hhmm.split(':').map(Number)
   return h * 60 + m
 }
-
-/** Local calendar day as 'YYYY-MM-DD'. Not toISOString(), which is UTC. */
-const localDay = (d: Date): string =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 const fmtDuration = (min: number): string => {
   const h = Math.floor(min / 60)

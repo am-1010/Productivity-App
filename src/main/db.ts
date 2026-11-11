@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
+import type { NewTaskInput, Task, TaskSource } from '../shared/types'
 
 const dbPath = join(app.getPath('userData'), 'tasks.db')
 
@@ -55,24 +56,12 @@ interface TaskRow {
   notes: string | null
 }
 
-export interface Task {
-  id: string
-  title: string
-  project?: string
-  source?: string
-  day?: string
-  notes?: string
-  start?: number
-  end?: number
-  done: boolean
-}
-
 function toTask(r: TaskRow): Task {
   return {
     id: r.id,
     title: r.title,
     project: r.project ?? undefined,
-    source: r.source ?? undefined,
+    source: (r.source as TaskSource | null) ?? undefined,
     day: r.day ?? undefined,
     notes: r.notes ?? undefined,
     start: r.start_min ?? undefined,
@@ -104,13 +93,7 @@ export function getUpcomingTasks(day: string): Task[] {
   return rows.map(toTask)
 }
 
-export function addTask(input: {
-  title: string
-  day?: string
-  notes?: string
-  start?: number
-  end?: number
-}): void {
+export function addTask(input: NewTaskInput): void {
   db.prepare(
     'INSERT INTO task (id, title, day, notes, start_min, end_min) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(

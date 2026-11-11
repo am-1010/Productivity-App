@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
-import TodayView, { type Task } from './TodayView'
+import TodayView from './TodayView'
+import { localDay } from './day'
+import type { Task } from '../../shared/types'
 
-/** Local calendar day as 'YYYY-MM-DD'. Not toISOString(), which is UTC. */
-const localDay = (d: Date): string =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 function App(): React.JSX.Element {
   // The current time, so the "now" line on the timeline stays live.
