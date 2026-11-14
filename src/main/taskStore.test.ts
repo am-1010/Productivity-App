@@ -143,3 +143,64 @@ describe('migrations', () => {
     expect(() => openTaskStore(db)).not.toThrow()
   })
 })
+
+describe('updateTask', () => {
+  it('replaces the title, day, notes and times', () => {
+    store.addTask({ title: 'Draft', day: '2026-11-13', start: 540, end: 600 })
+    const [task] = store.getTasksForDay('2026-11-13')
+
+    store.updateTask(task.id, {
+      title: 'Final',
+      day: '2026-11-14',
+      notes: 'moved',
+      start: 600,
+      end: 660
+    })
+
+    expect(store.getTasksForDay('2026-11-13')).toEqual([])
+    expect(store.getUpcomingTasks('2026-11-13')).toEqual([
+      expect.objectContaining({
+        id: task.id,
+        title: 'Final',
+        day: '2026-11-14',
+        notes: 'moved',
+        start: 600,
+        end: 660
+      })
+    ])
+  })
+
+  it('clears fields that are left empty', () => {
+    store.addTask({ title: 'Timed', day: '2026-11-13', notes: 'x', start: 540, end: 600 })
+    const [task] = store.getTasksForDay('2026-11-13')
+
+    store.updateTask(task.id, { title: 'Timed', day: '2026-11-13' })
+
+    const [updated] = store.getTasksForDay('2026-11-13')
+    expect(updated.notes).toBeUndefined()
+    expect(updated.start).toBeUndefined()
+    expect(updated.end).toBeUndefined()
+  })
+
+  it('keeps a task done after editing it', () => {
+    store.addTask({ title: 'Done already', day: '2026-11-13' })
+    const [task] = store.getTasksForDay('2026-11-13')
+    store.toggleTask(task.id)
+
+    store.updateTask(task.id, { title: 'Renamed', day: '2026-11-13' })
+
+    expect(store.getTasksForDay('2026-11-13')[0]).toEqual(
+      expect.objectContaining({ title: 'Renamed', done: true })
+    )
+  })
+
+  it('keeps a done task on its day if the date is cleared', () => {
+    store.addTask({ title: 'Done', day: '2026-11-13' })
+    const [task] = store.getTasksForDay('2026-11-13')
+    store.toggleTask(task.id)
+
+    store.updateTask(task.id, { title: 'Done' })
+
+    expect(store.getTasksForDay('2026-11-13')[0].day).toBe('2026-11-13')
+  })
+})

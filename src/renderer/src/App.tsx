@@ -3,7 +3,6 @@ import TodayView from './TodayView'
 import { localDay } from './day'
 import type { Task } from '../../shared/types'
 
-
 function App(): React.JSX.Element {
   // The current time, so the "now" line on the timeline stays live.
   const [now, setNow] = useState(() => {
@@ -49,6 +48,7 @@ function App(): React.JSX.Element {
       nowMinutes={now}
       // No .catch here on purpose: the error goes back to the form so it can show it.
       onNewTask={(input) => window.api.addTask(input).then(load)}
+      onUpdateTask={(id, input) => window.api.updateTask(id, input).then(load)}
       onToggleTask={(id) =>
         window.api
           .toggleTask(id)

@@ -76,8 +76,8 @@ export interface TodayViewProps {
   /** Minutes from midnight. Pass a ticking value to animate the now-line. */
   nowMinutes: number
   onToggleTask?: (id: string) => void
-  onOpenTask?: (id: string) => void
   onNewTask?: (input: NewTaskInput) => Promise<void>
+  onUpdateTask?: (id: string, input: NewTaskInput) => Promise<void>
   onDeleteTask?: (id: string) => void
   onNavigate?: (key: NavKey) => void
   /** Earliest hour the rail will ever show when the day starts late. */
@@ -636,8 +636,8 @@ export const TodayView: React.FC<TodayViewProps> = ({
   activeNav = 'today',
   nowMinutes,
   onToggleTask,
-  onOpenTask,
   onNewTask,
+  onUpdateTask,
   onDeleteTask,
   onNavigate,
   railFloorHour = 7,
@@ -651,6 +651,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
   const [endTime, setEndTime] = useState('')
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const open = tasks.filter((task) => !task.done)
   const done = tasks.filter((task) => task.done)
   const current = open.find(
@@ -678,7 +679,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
 
   const submitNewTask = async (): Promise<void> => {
     const title = draft.trim()
-    if (!title || !onNewTask) return
+    if (!title) return
 
     const start = toMinutes(startTime)
     let end = toMinutes(endTime)
@@ -695,24 +696,41 @@ export const TodayView: React.FC<TodayViewProps> = ({
     }
     if (start != null && end != null && end < start) end += 24 * 60
 
+    const input: NewTaskInput = {
+      title,
+      day: day || (start != null ? localDay(date) : undefined),
+      notes: notes.trim() || undefined,
+      start,
+      end
+    }
+
     try {
-      await onNewTask({
-        title,
-        day: day || (start != null ? localDay(date) : undefined),
-        notes: notes.trim() || undefined,
-        start,
-        end
-      })
-      setDraft('')
-      setDay('')
-      setStartTime('')
-      setEndTime('')
-      setNotes('')
-      setError(null)
+      if (editingId) await onUpdateTask?.(editingId, input)
+      else await onNewTask?.(input)
+      fillForm()
       setAdding(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
+  }
+
+  /** Loads a task into the form, or clears the form when called with nothing. */
+  const fillForm = (task?: Task): void => {
+    setEditingId(task?.id ?? null)
+    setDraft(task?.title ?? '')
+    setDay(task?.day ?? '')
+    setStartTime(task?.start != null ? fmt(task.start) : '')
+    setEndTime(task?.end != null ? fmt(task.end) : '')
+    setNotes(task?.notes ?? '')
+    setError(null)
+  }
+
+  /** Clicking a task row opens it in the form for editing */
+  const onOpenTask = (id: string): void => {
+    const task = [...tasks, ...upcoming].find((item) => item.id === id)
+    if (!task) return
+    fillForm(task)
+    setAdding(true)
   }
 
   return (
@@ -758,7 +776,14 @@ export const TodayView: React.FC<TodayViewProps> = ({
           </div>
           <div style={{ position: 'relative' }}>
             <button
-              onClick={() => setAdding((v) => !v)}
+              onClick={() => {
+                if (adding && !editingId) {
+                  setAdding(false)
+                } else {
+                  fillForm()
+                  setAdding(true)
+                }
+              }}
               style={{
                 padding: '8px 16px',
                 border: 'none',
@@ -861,7 +886,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
                     cursor: 'pointer'
                   }}
                 >
-                  Add task
+                  {editingId ? 'Save' : 'Add task'}
                 </button>
               </div>
             )}

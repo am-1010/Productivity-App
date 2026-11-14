@@ -6,6 +6,7 @@ export interface TaskStore {
   getTasksForDay(day: string): Task[]
   getUpcomingTasks(day: string): Task[]
   addTask(input: NewTaskInput): void
+  updateTask(id: string, input: NewTaskInput): void
   toggleTask(id: string): void
   deleteTask(id: string): void
 }
@@ -112,6 +113,27 @@ export function openTaskStore(db: Database.Database): TaskStore {
         input.start ?? null,
         input.end ?? null
       )
+    },
+
+    // Replaces the editable fields. Done state is left alone. A done task keeps
+    // its day if the date is cleared, so it doesn't vanish from the Done List
+    updateTask(id: string, input: NewTaskInput): void {
+      db.prepare(
+        `UPDATE task SET
+                title = @title,
+                notes = @notes,
+                start_min = @start,
+                end_min = @end,
+                day = CASE WHEN @day IS NULL AND done_at IS NOT NULL THEN day ELSE @day END
+            WHERE id = @id`
+      ).run({
+        id,
+        title: input.title,
+        day: input.day ?? null,
+        notes: input.notes ?? null,
+        start: input.start ?? null,
+        end: input.end ?? null
+      })
     },
 
     // done_at is milliseconds (Date.now()). Completing a task with no day files it

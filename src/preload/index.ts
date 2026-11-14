@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { NewTaskInput } from '../shared/types';
+import type { NewTaskInput } from '../shared/types'
 
 // Custom APIs for renderer
 const api = {
@@ -8,6 +8,7 @@ const api = {
   getTasks: (day: string) => ipcRenderer.invoke('tasks:get', day),
   getUpcomingTasks: (day: string) => ipcRenderer.invoke('tasks:upcoming', day),
   addTask: (input: NewTaskInput) => ipcRenderer.invoke('tasks:add', input),
+  updateTask: (id: string, input: NewTaskInput) => ipcRenderer.invoke('tasks:update', id, input),
   toggleTask: (id: string) => ipcRenderer.invoke('tasks:toggle', id),
   deleteTask: (id: string) => ipcRenderer.invoke('tasks:delete', id)
 }
