@@ -8,6 +8,7 @@ const api = {
   getTasks: (day: string) => ipcRenderer.invoke('tasks:get', day),
   getUpcomingTasks: (day: string) => ipcRenderer.invoke('tasks:upcoming', day),
   addTask: (input: NewTaskInput) => ipcRenderer.invoke('tasks:add', input),
+  getTasksForRange: (from: string, to: string) => ipcRenderer.invoke('tasks:range', from, to),
   updateTask: (id: string, input: NewTaskInput) => ipcRenderer.invoke('tasks:update', id, input),
   toggleTask: (id: string) => ipcRenderer.invoke('tasks:toggle', id),
   deleteTask: (id: string) => ipcRenderer.invoke('tasks:delete', id)

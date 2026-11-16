@@ -7,8 +7,9 @@ export const fmt = (min: number): string =>
 export const fmtRange = (start: number, end?: number): string =>
   end == null ? fmt(start) : `${fmt(start)} - ${fmt(end)}`
 
-export const isBlocked = (task: Task): task is Task & { start: number; end: number } =>
-  task.start != null && task.end != null
+export type BlockedTask = Task & { start: number; end: number }
+
+export const isBlocked = (task: Task): task is BlockedTask => task.start != null && task.end != null
 
 /**
  * Rail starts at `floorHour`, or earlier if something is blocked before it.
@@ -49,4 +50,31 @@ export const fmtDuration = (min: number): string => {
   const h = Math.floor(min / 60)
   const m = min % 60
   return [h ? `${h}h` : null, m ? `${m}m` : null].filter(Boolean).join(' ') || '0m'
+}
+
+const DAY_MIN = 24 * 60
+
+/** One piece of a task as drawn in a single day's column. */
+export interface DayBlock {
+  task: BlockedTask /** Minutes from that day's midnight, always within 0-1440. */
+  start: number
+  end: number
+}
+
+/**
+ * The time blocks to draw for `day`. A task that runs past midnight is split:
+ * the part up to 24:00 belongs to its own day, the rest to the next day.
+ * `prevDay` is the day before `day`, both as 'YYYY-MM-DD'.
+ */
+export function blocksForDay(tasks: Task[], day: string, prevDay: string): DayBlock[] {
+  const blocks: DayBlock[] = []
+  for (const task of tasks) {
+    if (!isBlocked(task)) continue
+    if (task.day === day) {
+      blocks.push({ task, start: task.start, end: Math.min(task.end, DAY_MIN) })
+    } else if (task.day === prevDay && task.end > DAY_MIN) {
+      blocks.push({ task, start: 0, end: task.end - DAY_MIN })
+    }
+  }
+  return blocks.sort((a, b) => a.start - b.start)
 }

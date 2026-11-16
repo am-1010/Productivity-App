@@ -28,41 +28,12 @@
  */
 
 import React, { useMemo, useState } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { NewTaskInput, Task } from '../../shared/types'
 import { dayHeading, localDay } from './day'
+import { eyebrow, t } from './theme'
+import { WeekNav, WeekView } from './WeekView'
 import { blockedMinutes, fmt, fmtRange, isBlocked, railRange, toMinutes, fmtDuration } from './time'
-
-/* ------------------------------------------------------------------ tokens */
-
-const t = {
-  shell: '#070707',
-  surface1: 'rgba(255,255,255,.035)',
-  surface2: 'rgba(255,255,255,.055)',
-  surface3: 'rgba(255,255,255,.08)',
-  fill: '#131313',
-  control: '#191919',
-  strokeControl: '#363636',
-  markerActive: '#f0f0f0',
-  markerIdle: '#4d4d4d',
-  hairline: 'rgba(255,255,255,.045)',
-  textMax: '#f0f0f0',
-  text1: '#ececec',
-  text2: '#e3e3e3',
-  text3: '#a0a0a0',
-  text4: '#878787',
-  text5: '#626262',
-  text6: '#525252',
-  serif: "'Newsreader',Georgia,'Times New Roman',serif",
-  mono: "ui-monospace,'SF Mono',Menlo,monospace"
-} as const
-
-const eyebrow: CSSProperties = {
-  font: `400 10.5px/1 ${t.mono}`,
-  letterSpacing: '.14em',
-  color: t.text5,
-  textTransform: 'uppercase'
-}
 
 /* ------------------------------------------------------------------- types */
 
@@ -70,6 +41,11 @@ export interface TodayViewProps {
   date: Date
   tasks: Task[]
   upcoming?: Task[]
+  /** Tasks for the week view: the shown week plus the day before it. */
+  week?: Task[]
+  /** Monday of the week the week view is showing. */
+  weekStart?: Date
+  onChangeWeek?: (start: Date) => void
   /** Counts for the tab strip; supplied by the caller so this view stays dumb. */
   counts?: { today: number; inbox: number; upcoming?: number }
   activeNav?: NavKey
@@ -632,6 +608,9 @@ export const TodayView: React.FC<TodayViewProps> = ({
   date,
   tasks,
   upcoming = [],
+  week = [],
+  weekStart,
+  onChangeWeek,
   counts,
   activeNav = 'today',
   nowMinutes,
@@ -727,7 +706,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
 
   /** Clicking a task row opens it in the form for editing */
   const onOpenTask = (id: string): void => {
-    const task = [...tasks, ...upcoming].find((item) => item.id === id)
+    const task = [...tasks, ...upcoming, ...week].find((item) => item.id === id)
     if (!task) return
     fillForm(task)
     setAdding(true)
@@ -771,8 +750,15 @@ export const TodayView: React.FC<TodayViewProps> = ({
                 letterSpacing: '-.02em'
               }}
             >
-              Today
+              {activeNav === 'week' ? 'Week' : 'Today'}
             </h1>
+            {activeNav === 'week' && weekStart && (
+              <WeekNav
+                weekStart={weekStart}
+                today={date}
+                onChange={(start) => onChangeWeek?.(start)}
+              />
+            )}
           </div>
           <div style={{ position: 'relative' }}>
             <button
@@ -807,7 +793,8 @@ export const TodayView: React.FC<TodayViewProps> = ({
                   right: 0, // align to the button's right edge
                   width: 300,
                   zIndex: 20, // sit above the page content
-                  background: 'rgba(255,255,255,.025)',
+                  background: t.control,
+                  border: `1px solid ${t.strokeControl}`,
                   borderRadius: 12,
                   padding: '16px 16px 12px',
                   boxShadow: '0 12px 32px rgba(0,0,0,.45)'
@@ -893,7 +880,13 @@ export const TodayView: React.FC<TodayViewProps> = ({
           </div>
         </header>
 
-        <div style={{ display: 'flex', gap: 26, padding: '16px 34px 0' }}>
+        <div
+          style={{
+            display: activeNav === 'week' ? 'none' : 'flex',
+            gap: 26,
+            padding: '16px 34px 0'
+          }}
+        >
           {TABS.map((tab) => {
             const on = tab === activeTab
             const enabled = tab === 'Today' || tab === 'Upcoming'
@@ -939,7 +932,15 @@ export const TodayView: React.FC<TodayViewProps> = ({
             gap: 2
           }}
         >
-          {activeTab === 'Upcoming' ? (
+          {activeNav === 'week' && weekStart ? (
+            <WeekView
+              weekStart={weekStart}
+              today={date}
+              tasks={week}
+              nowMinutes={nowMinutes}
+              onOpen={onOpenTask}
+            />
+          ) : activeTab === 'Upcoming' ? (
             <UpcomingList
               tasks={upcoming}
               today={date}
@@ -1036,8 +1037,9 @@ export const TodayView: React.FC<TodayViewProps> = ({
           )}
         </div>
       </main>
-
-      <DayRail tasks={tasks} nowMinutes={nowMinutes} floor={railFloorHour} end={railEndHour} />
+      {activeNav !== 'week' && (
+        <DayRail tasks={tasks} nowMinutes={nowMinutes} floor={railFloorHour} end={railEndHour} />
+      )}
     </div>
   )
 }

@@ -5,6 +5,7 @@ import type { NewTaskInput, Task, TaskSource } from '../shared/types'
 export interface TaskStore {
   getTasksForDay(day: string): Task[]
   getUpcomingTasks(day: string): Task[]
+  getTasksForRange(from: string, to: string): Task[]
   addTask(input: NewTaskInput): void
   updateTask(id: string, input: NewTaskInput): void
   toggleTask(id: string): void
@@ -99,6 +100,18 @@ export function openTaskStore(db: Database.Database): TaskStore {
                     ORDER BY day, start_min IS NULL, start_min`
         )
         .all(day) as TaskRow[]
+      return rows.map(toTask)
+    },
+
+    // Evert task dated from `from` to `to`, both included ('YYYY-MM-DD').
+    getTasksForRange(from: string, to: string): Task[] {
+      const rows = db
+        .prepare(
+          `SELECT * FROM TASK
+             WHERE day BETWEEN ? AND ?
+             ORDER BY day, start_min IS NULL, start_min`
+        )
+        .all(from, to) as TaskRow[]
       return rows.map(toTask)
     },
 

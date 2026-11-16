@@ -2,7 +2,15 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { getTasksForDay, getUpcomingTasks, addTask, updateTask, toggleTask, deleteTask } from './db'
+import {
+  getTasksForDay,
+  getUpcomingTasks,
+  getTasksForRange,
+  addTask,
+  updateTask,
+  toggleTask,
+  deleteTask
+} from './db'
 import type { NewTaskInput } from '../shared/types'
 
 function createWindow(): void {
@@ -59,6 +67,7 @@ app.whenReady().then(() => {
   ipcMain.handle('tasks:get', (_event, day: string) => getTasksForDay(day))
   ipcMain.handle('tasks:upcoming', (_event, day: string) => getUpcomingTasks(day))
   ipcMain.handle('tasks:add', (_event, input: NewTaskInput) => addTask(input))
+  ipcMain.handle('tasks:range', (_event, from: string, to: string) => getTasksForRange(from, to))
   ipcMain.handle('tasks:update', (_event, id: string, input: NewTaskInput) => updateTask(id, input))
   ipcMain.handle('tasks:toggle', (_event, id: string) => toggleTask(id))
   ipcMain.handle('tasks:delete', (_event, id: string) => deleteTask(id))

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { Task } from '../../shared/types'
-import { blockedMinutes, fmt, fmtDuration, fmtRange, railRange, toMinutes } from './time'
+import {
+  blocksForDay,
+  blockedMinutes,
+  fmt,
+  fmtDuration,
+  fmtRange,
+  railRange,
+  toMinutes
+} from './time'
 
 /** A task with just the fields these helpers care about. */
 const task = (start?: number, end?: number): Task => ({
@@ -74,5 +82,36 @@ describe('railRange', () => {
 
   it('ignores tasks without both times', () => {
     expect(railRange([task(300)])).toEqual({ startHour: 7, endHour: 17 })
+  })
+})
+
+describe('blocksForDay', () => {
+  const on = (day: string, start?: number, end?: number): Task => ({ ...task(start, end), day })
+
+  it("returns that day's timed tasks, earliest first", () => {
+    const blocks = blocksForDay(
+      [on('2026-11-10', 840, 900), on('2026-11-10', 540, 600), on('2026-11-11', 600, 660)],
+      '2026-11-10',
+      '2026-11-09'
+    )
+    expect(blocks.map((b) => [b.start, b.end])).toEqual([
+      [540, 600],
+      [840, 900]
+    ])
+  })
+
+  it('leaves, out tasks with no time', () => {
+    expect(blocksForDay([on('2026-11-10')], '2026-11-10', '2026-11-09')).toEqual([])
+  })
+
+  it('splits a task that runs past midnight across two days', () => {
+    const late = on('2026-11-10', 1380, 1470) // 23:00 - 00:30
+
+    expect(blocksForDay([late], '2026-11-10', '2026-11-09')).toEqual([
+      { task: late, start: 1380, end: 1440 }
+    ])
+    expect(blocksForDay([late], '2026-11-11', '2026-11-10')).toEqual([
+      { task: late, start: 0, end: 30 }
+    ])
   })
 })

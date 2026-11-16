@@ -15,3 +15,10 @@ export const dayHeading = (day: string, today: Date): string => {
     ...(y !== today.getFullYear() ? { year: 'numeric' } : {})
   })
 }
+
+/** The date `n` days after `d` (negative goes back), at local midnight. */
+export const addDays = (d: Date, n: number): Date =>
+  new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
+
+/** Monday of the week containing `d`, at local midnight. */
+export const startOfWeek = (d: Date): Date => addDays(d, -((d.getDay() + 6) % 7))

@@ -6,7 +6,14 @@ import { openTaskStore } from './taskStore'
 const db: Database.Database = new Database(join(app.getPath('userData'), 'tasks.db'))
 db.pragma('journal_mode = WAL')
 
-export const { getTasksForDay, getUpcomingTasks, addTask, updateTask, toggleTask, deleteTask } =
-  openTaskStore(db)
+export const {
+  getTasksForDay,
+  getUpcomingTasks,
+  getTasksForRange,
+  addTask,
+  updateTask,
+  toggleTask,
+  deleteTask
+} = openTaskStore(db)
 
 export default db

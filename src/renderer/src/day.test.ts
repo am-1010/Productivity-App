@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dayHeading, localDay } from './day'
+import { addDays, dayHeading, localDay, startOfWeek } from './day'
 
 describe('localDay', () => {
   it('formats a date as YYYY-MM-DD with padding', () => {
@@ -28,5 +28,26 @@ describe('dayHeading', () => {
 
   it('includes the year for dates in another year', () => {
     expect(dayHeading('2027-01-04', today)).toContain('2027')
+  })
+})
+
+describe('addDays', () => {
+  it('moves forward and back across month and year ends', () => {
+    expect(localDay(addDays(new Date(2026, 10, 30), 1))).toBe('2026-12-01')
+    expect(localDay(addDays(new Date(2026, 0, 1), -1))).toBe('2025-12-31')
+  })
+})
+
+describe('startOfWeek', () => {
+  it('returns the Monday of that week', () => {
+    expect(localDay(startOfWeek(new Date(2026, 10, 12, 15, 0)))).toBe('2026-11-09') // a Thursday
+  })
+
+  it('treats Sunday as the last day of the week, not the first', () => {
+    expect(localDay(startOfWeek(new Date(2026, 10, 15)))).toBe('2026-11-09')
+  })
+
+  it('returns the same day for a Monday', () => {
+    expect(localDay(startOfWeek(new Date(2026, 10, 16)))).toBe('2026-11-16')
   })
 })

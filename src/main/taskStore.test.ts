@@ -204,3 +204,20 @@ describe('updateTask', () => {
     expect(store.getTasksForDay('2026-11-13')[0].day).toBe('2026-11-13')
   })
 })
+
+describe('getTasksForRange', () => {
+  it('returns task dated within the range, both ends included, in day then time order', () => {
+    store.addTask({ title: 'Before', day: '2026-11-08' })
+    store.addTask({ title: 'Sun', day: '2026-11-15' })
+    store.addTask({ title: 'Mon late', day: '2026-11-09', start: 900, end: 960 })
+    store.addTask({ title: 'Mon early', day: '2026-11-09', start: 540, end: 600 })
+    store.addTask({ title: 'After', day: '2026-11-16' })
+    store.addTask({ title: 'Undated' })
+
+    expect(store.getTasksForRange('2026-11-09', '2026-11-15').map((t) => t.title)).toEqual([
+      'Mon early',
+      'Mon late',
+      'Sun'
+    ])
+  })
+})
