@@ -27,7 +27,7 @@
  *      ORDER BY start_min IS NULL, start_min;
  */
 
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { NewTaskInput, Task } from '../../shared/types'
 import { dayHeading, localDay } from './day'
@@ -461,8 +461,17 @@ const DayRail: React.FC<{ tasks: Task[]; nowMinutes: number; floor?: number; end
   const nowTop = ((nowMinutes - startHour * 60) / 60) * HOUR_PX
   const nowVisible = nowTop >= 0 && nowTop <= hours * HOUR_PX
 
+  const railRef = useRef<HTMLElement>(null)
+  const didScroll = useRef(false)
+  useEffect(() => {
+    if (didScroll.current || !railRef.current) return
+    railRef.current.scrollTop = Math.max(0, nowTop - 150)
+    didScroll.current = true
+  }, [nowTop])
+
   return (
     <aside
+      ref={railRef}
       style={{
         width: 330,
         flex: 'none',
@@ -619,8 +628,8 @@ export const TodayView: React.FC<TodayViewProps> = ({
   onUpdateTask,
   onDeleteTask,
   onNavigate,
-  railFloorHour = 7,
-  railEndHour = 17
+  railFloorHour = 0,
+  railEndHour = 24
 }) => {
   const [adding, setAdding] = useState(false)
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>('Today')

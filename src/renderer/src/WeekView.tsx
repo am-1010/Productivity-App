@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { CSSProperties, FC } from 'react'
 import type { Task } from '../../shared/types'
 import { addDays, localDay, startOfWeek } from './day'
@@ -82,17 +83,34 @@ export const WeekView: FC<{
     }
   })
 
-  // The grid covers 07–17, and stretches for anything earlier or later.
-  const blocks = columns.flatMap((column) => column.blocks)
-  const startHour = Math.min(7, ...blocks.map((block) => Math.floor(block.start / 60)))
-  const endHour = Math.max(17, ...blocks.map((block) => Math.ceil(block.end / 60)))
+  // The grid covers always covers the whole day, 00:00 to 24:00, and scrolls
+  const startHour = 0
+  const endHour = 24
   const height = (endHour - startHour) * HOUR_PX
   const nowTop = ((nowMinutes - startHour * 60) / 60) * HOUR_PX
 
+  // When the view first opens, scroll so the current time is in sight.
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const didScroll = useRef(false)
+  useEffect(() => {
+    if (didScroll.current || !scrollRef.current) return
+    scrollRef.current.scrollTop = Math.max(0, nowTop - 150)
+    didScroll.current = true
+  }, [nowTop])
+
   return (
-    <div style={{ minWidth: 620 }}>
-      {/* Day names, dates, and tasks that have a day but no time */}
-      <div style={{ display: 'flex', paddingLeft: GUTTER }}>
+    <div ref={scrollRef} style={{ flex: 1, minHeight: 0, minWidth: 620, overflowY: 'auto' }}>
+      {/* Day names, dates, and tasks that have a day but no time. Stays pinned while scrolling */}
+      <div
+        style={{
+          display: 'flex',
+          paddingLeft: GUTTER,
+          position: 'sticky',
+          top: 0,
+          zIndex: 2,
+          background: t.shell
+        }}
+      >
         {columns.map((column) => (
           <div
             key={column.key}
@@ -143,7 +161,7 @@ export const WeekView: FC<{
       </div>
 
       {/* The hour grid */}
-      <div style={{ display: 'flex', height: height + 8 }}>
+      <div style={{ display: 'flex', height: height + 8, paddingTop: 6 }}>
         <div style={{ width: GUTTER, flex: 'none', position: 'relative' }}>
           {Array.from({ length: endHour - startHour + 1 }, (_, i) => (
             <div
