@@ -78,3 +78,22 @@ export function blocksForDay(tasks: Task[], day: string, prevDay: string): DayBl
   }
   return blocks.sort((a, b) => a.start - b.start)
 }
+
+/** Dragged blocks snap to this many minutes. */
+export const SNAP_MIN = 15
+
+/**
+ * Where a block lands after being dragged by `deltaMin` minutes. The start snaps
+ * to 15 minutes and stays within the day; the length is kept, so the end may
+ * run past midnight.
+ */
+export function moveBlock(
+  start: number,
+  end: number,
+  deltaMin: number
+): { start: number; end: number } {
+  const length = end - start
+  const snapped = Math.round((start + deltaMin) / SNAP_MIN) * SNAP_MIN
+  const newStart = Math.min(Math.max(snapped, 0), DAY_MIN - SNAP_MIN)
+  return { start: newStart, end: newStart + length }
+}

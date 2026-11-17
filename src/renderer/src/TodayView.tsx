@@ -34,6 +34,7 @@ import { dayHeading, localDay } from './day'
 import { eyebrow, t } from './theme'
 import { WeekNav, WeekView } from './WeekView'
 import { blockedMinutes, fmt, fmtRange, isBlocked, railRange, toMinutes, fmtDuration } from './time'
+import { useBlockDrag } from './useBlockDrag'
 
 /* ------------------------------------------------------------------- types */
 
@@ -721,6 +722,15 @@ export const TodayView: React.FC<TodayViewProps> = ({
     setAdding(true)
   }
 
+  /** Drag and drop: gives a task a new day and time, keeping its title and notes. */
+  const moveTask = (id: string, to: { day: string; start: number; end: number }): void => {
+    const task = [...tasks, ...upcoming, ...week].find((item) => item.id === id)
+    if (!task) return
+    onUpdateTask?.(id, { title: task.title, notes: task.notes, ...to }).catch((err) =>
+      console.error('Failed to move task', err)
+    )
+  }
+
   return (
     <div
       style={{
@@ -948,6 +958,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
               tasks={week}
               nowMinutes={nowMinutes}
               onOpen={onOpenTask}
+              onMove={moveTask}
             />
           ) : activeTab === 'Upcoming' ? (
             <UpcomingList

@@ -3,7 +3,8 @@ import type { CSSProperties, FC } from 'react'
 import type { Task } from '../../shared/types'
 import { addDays, localDay, startOfWeek } from './day'
 import { eyebrow, t } from './theme'
-import { blocksForDay, fmt, fmtRange, isBlocked } from './time'
+import { blocksForDay, fmt, fmtRange, isBlocked, moveBlock } from './time'
+import { useBlockDrag, type BlockDrag } from './useBlockDrag'
 
 const HOUR_PX = 44
 /** Width of the hour labels down the left side. */
@@ -69,7 +70,9 @@ export const WeekView: FC<{
   tasks: Task[]
   nowMinutes: number
   onOpen?: (id: string) => void
-}> = ({ weekStart, today, tasks, nowMinutes, onOpen }) => {
+  /** Called when a block is dragged to a new day or time. */
+  onMove?: (id: string, to: { day: string; start: number; end: number }) => void
+}> = ({ weekStart, today, tasks, nowMinutes, onOpen, onMove }) => {
   const todayKey = localDay(today)
   const columns = Array.from({ length: 7 }, (_, i) => {
     const date = addDays(weekStart, i)
@@ -97,6 +100,33 @@ export const WeekView: FC<{
     scrollRef.current.scrollTop = Math.max(0, nowTop - 150)
     didScroll.current = true
   }, [nowTop])
+
+  const dropTarget = (
+    d: BlockDrag
+  ): { column: number; day: string; start: number; end: number } | null => {
+    const task = tasks.find((item) => item.id === d.id)
+    if (!task || !isBlocked(task) || d.columnWidth === 0) return null
+    const from = columns.findIndex((column) => column.key === task.day)
+    if (from < 0) return null
+    const column = Math.min(6, Math.max(0, from + Math.round(d.dx / d.columnWidth)))
+    return {
+      column,
+      day: columns[column].key,
+      ...moveBlock(task.start, task.end, (d.dy / HOUR_PX) * 60)
+    }
+  }
+
+  const { drag, startDrag } = useBlockDrag({
+    onClick: onOpen,
+    onDrop: (d) => {
+      const target = dropTarget(d)
+      const task = tasks.find((item) => item.id === d.id)
+      if (!target || !task) return
+      if (target.day === task.day && target.start === task.start) return // didn't move
+      onMove?.(d.id, { day: target.day, start: target.start, end: target.end })
+    }
+  })
+  const target = drag ? dropTarget(drag) : null
 
   return (
     <div ref={scrollRef} style={{ flex: 1, minHeight: 0, minWidth: 620, overflowY: 'auto' }}>
@@ -178,7 +208,7 @@ export const WeekView: FC<{
           ))}
         </div>
 
-        {columns.map((column) => (
+        {columns.map((column, columnIndex) => (
           <div
             key={column.key}
             style={{
@@ -194,10 +224,16 @@ export const WeekView: FC<{
             {column.blocks.map((block) => {
               const top = ((block.start - startHour * 60) / 60) * HOUR_PX
               const blockHeight = Math.max(((block.end - block.start) / 60) * HOUR_PX, 16)
+              // The piece on the task's own day can be dragged. The piece that
+              // spills past midnight into the next day only opens the editor.
+              const draggable = block.task.day === column.key
+              const dragging = drag?.id === block.task.id
+
               return (
                 <div
                   key={block.task.id}
-                  onClick={() => onOpen?.(block.task.id)}
+                  onPointerDown={draggable ? (e) => startDrag(block.task.id, e) : undefined}
+                  onClick={draggable ? undefined : () => onOpen?.(block.task.id)}
                   title={`${block.task.title} · ${fmtRange(block.task.start, block.task.end)}`}
                   style={{
                     position: 'absolute',
@@ -211,8 +247,9 @@ export const WeekView: FC<{
                     overflow: 'hidden',
                     background: column.isToday ? t.surface2 : t.fill,
                     borderLeft: `2px solid ${column.isToday ? t.markerActive : t.markerIdle}`,
-                    opacity: block.task.done ? 0.45 : 1,
-                    cursor: 'pointer'
+                    opacity: dragging ? 0.3 : block.task.done ? 0.45 : 1,
+                    cursor: draggable ? 'grab' : 'pointer',
+                    userSelect: 'none'
                   }}
                 >
                   <div
@@ -236,6 +273,33 @@ export const WeekView: FC<{
                 </div>
               )
             })}
+
+            {/* Preview of where the dragged block will land */}
+            {target && target.column === columnIndex && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 3,
+                  right: 3,
+                  top: (target.start / 60) * HOUR_PX,
+                  height: Math.max(
+                    ((Math.min(target.end, 1440) - target.start) / 60) * HOUR_PX,
+                    16
+                  ),
+                  boxSizing: 'border-box',
+                  padding: '3px 6px',
+                  borderRadius: 6,
+                  background: t.surface3,
+                  border: `1px solid ${t.markerActive}`,
+                  font: `400 9.5px ${t.mono}`,
+                  color: t.textMax,
+                  pointerEvents: 'none',
+                  zIndex: 1
+                }}
+              >
+                {fmtRange(target.start, target.end)}
+              </div>
+            )}
 
             {column.isToday && nowTop >= 0 && nowTop <= height && (
               <div

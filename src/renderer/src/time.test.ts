@@ -6,6 +6,7 @@ import {
   fmt,
   fmtDuration,
   fmtRange,
+  moveBlock,
   railRange,
   toMinutes
 } from './time'
@@ -113,5 +114,26 @@ describe('blocksForDay', () => {
     expect(blocksForDay([late], '2026-11-11', '2026-11-10')).toEqual([
       { task: late, start: 0, end: 30 }
     ])
+  })
+})
+
+describe('moveBlock', () => {
+  it('moves the block and keeps its length', () => {
+    expect(moveBlock(540, 600, 60)).toEqual({ start: 600, end: 660 })
+    expect(moveBlock(540, 600, -90)).toEqual({ start: 450, end: 510 })
+  })
+
+  it('snaps the start to the nearest 15 minutes', () => {
+    expect(moveBlock(540, 600, 7)).toEqual({ start: 540, end: 600 })
+    expect(moveBlock(540, 600, 8)).toEqual({ start: 555, end: 615 })
+    expect(moveBlock(544, 604, 0)).toEqual({ start: 540, end: 600 }) // 09:04 → 09:00
+  })
+
+  it('does not go above 00:00', () => {
+    expect(moveBlock(30, 90, -120)).toEqual({ start: 0, end: 60 })
+  })
+
+  it('does not start later than 23:45, but may end past midnight', () => {
+    expect(moveBlock(1320, 1380, 500)).toEqual({ start: 1425, end: 1485 })
   })
 })
