@@ -33,7 +33,16 @@ import type { NewTaskInput, Task } from '../../shared/types'
 import { dayHeading, localDay } from './day'
 import { eyebrow, t } from './theme'
 import { WeekNav, WeekView } from './WeekView'
-import { blockedMinutes, fmt, fmtRange, isBlocked, railRange, toMinutes, fmtDuration } from './time'
+import {
+  blockedMinutes,
+  fmt,
+  fmtRange,
+  isBlocked,
+  moveBlock,
+  railRange,
+  toMinutes,
+  fmtDuration
+} from './time'
 import { useBlockDrag } from './useBlockDrag'
 
 /* ------------------------------------------------------------------- types */
@@ -396,11 +405,16 @@ const TaskRow: React.FC<{
 }
 
 /** Sizing tiers from the spec: <30min blocks hide their time entirely. */
-const TimeBlock: React.FC<{ task: Task; startHour: number; current: boolean }> = ({
-  task,
-  startHour,
-  current
-}) => {
+const TimeBlock: React.FC<{
+  task: Task
+  startHour: number
+  current: boolean
+  /** Faded while it is being dragged. */
+  dragging?: boolean
+  /** Drawn as the drop preview: highlighted, and ignores the mouse. */
+  preview?: boolean
+  onPointerDown?: (event: React.PointerEvent<HTMLElement>) => void
+}> = ({ task, startHour, current, dragging, preview, onPointerDown }) => {
   if (!isBlocked(task)) return null
   const duration = task.end - task.start
   const top = ((task.start - startHour * 60) / 60) * HOUR_PX
@@ -409,6 +423,7 @@ const TimeBlock: React.FC<{ task: Task; startHour: number; current: boolean }> =
 
   return (
     <div
+      onPointerDown={onPointerDown}
       style={{
         position: 'absolute',
         left: 46,
@@ -419,8 +434,13 @@ const TimeBlock: React.FC<{ task: Task; startHour: number; current: boolean }> =
         overflow: 'hidden',
         boxSizing: 'border-box',
         padding: tight ? '2px 10px' : '8px 10px',
-        background: current ? t.surface2 : t.fill,
-        borderLeft: `2px solid ${current ? t.markerActive : t.markerIdle}`
+        background: preview ? t.surface3 : current ? t.surface2 : t.fill,
+        borderLeft: `2px solid ${current || preview ? t.markerActive : t.markerIdle}`,
+        opacity: dragging ? 0.3 : 1,
+        cursor: onPointerDown ? 'grab' : undefined,
+        userSelect: 'none',
+        pointerEvents: preview ? 'none' : undefined,
+        zIndex: preview ? 1 : undefined
       }}
     >
       <div
@@ -450,12 +470,15 @@ const TimeBlock: React.FC<{ task: Task; startHour: number; current: boolean }> =
   )
 }
 
-const DayRail: React.FC<{ tasks: Task[]; nowMinutes: number; floor?: number; end?: number }> = ({
-  tasks,
-  nowMinutes,
-  floor,
-  end
-}) => {
+const DayRail: React.FC<{
+  tasks: Task[]
+  nowMinutes: number
+  floor?: number
+  end?: number
+  onOpen?: (id: string) => void
+  /** Called when a block is dragged to a new time. */
+  onMove?: (id: string, to: { day: string; start: number; end: number }) => void
+}> = ({ tasks, nowMinutes, floor, end, onOpen, onMove }) => {
   const { startHour, endHour } = useMemo(() => railRange(tasks, floor, end), [tasks, floor, end])
   const hasBlocks = tasks.some(isBlocked)
   const hours = endHour - startHour
@@ -469,6 +492,17 @@ const DayRail: React.FC<{ tasks: Task[]; nowMinutes: number; floor?: number; end
     railRef.current.scrollTop = Math.max(0, nowTop - 150)
     didScroll.current = true
   }, [nowTop])
+
+  const { drag, startDrag } = useBlockDrag({
+    onClick: onOpen,
+    onDrop: (d) => {
+      const task = tasks.find((item) => item.id === d.id)
+      if (!task || !isBlocked(task) || !task.day) return
+      const to = moveBlock(task.start, task.end, (d.dy / HOUR_PX) * 60)
+      if (to.start !== task.start) onMove?.(d.id, { day: task.day, ...to })
+    }
+  })
+  const dragged = drag ? tasks.filter(isBlocked).find((task) => task.id === drag.id) : undefined
 
   return (
     <aside
@@ -541,9 +575,24 @@ const DayRail: React.FC<{ tasks: Task[]; nowMinutes: number; floor?: number; end
             key={task.id}
             task={task}
             startHour={startHour}
-            current={nowMinutes >= task.start! && nowMinutes < task.end!}
+            current={nowMinutes >= task.start && nowMinutes < task.end}
+            dragging={drag?.id === task.id}
+            onPointerDown={(e) => startDrag(task.id, e)}
           />
         ))}
+
+        {/* Preview of where the dragged block will land */}
+        {drag && dragged && (
+          <TimeBlock
+            task={{
+              ...dragged,
+              ...moveBlock(dragged.start, dragged.end, (drag.dy / HOUR_PX) * 60)
+            }}
+            startHour={startHour}
+            current={false}
+            preview
+          />
+        )}
 
         {nowVisible && (
           <div
@@ -1058,7 +1107,14 @@ export const TodayView: React.FC<TodayViewProps> = ({
         </div>
       </main>
       {activeNav !== 'week' && (
-        <DayRail tasks={tasks} nowMinutes={nowMinutes} floor={railFloorHour} end={railEndHour} />
+        <DayRail
+          tasks={tasks}
+          nowMinutes={nowMinutes}
+          floor={railFloorHour}
+          end={railEndHour}
+          onOpen={onOpenTask}
+          onMove={moveTask}
+        />
       )}
     </div>
   )
