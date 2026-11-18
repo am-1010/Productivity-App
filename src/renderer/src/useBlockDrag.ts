@@ -9,6 +9,9 @@ export interface BlockDrag {
   id: string
   dx: number
   dy: number
+  /** Where the pointer is now, in window coordinates. */
+  x: number
+  y: number
   /** Width of the element the block sits in (its day column), measured when the drag began. */
   columnWidth: number
 }
@@ -23,6 +26,8 @@ export interface BlockDrag {
 export function useBlockDrag(options: {
   onDrop: (drag: BlockDrag) => void
   onClick?: (id: string) => void
+  /** Called on every pointer move while dragging. */
+  onDragMove?: (drag: BlockDrag) => void
 }): {
   drag: BlockDrag | null
   startDrag: (id: string, event: ReactPointerEvent<HTMLElement>) => void
@@ -55,8 +60,9 @@ export function useBlockDrag(options: {
       const dx = e.clientX - startX
       const dy = e.clientY - startY
       if (!current && Math.hypot(dx, dy) < THRESHOLD_PX) return
-      current = { id, dx, dy, columnWidth }
+      current = { id, dx, dy, x: e.clientX, y: e.clientY, columnWidth }
       setDrag(current)
+      latest.current.onDragMove?.(current)
     }
 
     const onUp = (): void => {

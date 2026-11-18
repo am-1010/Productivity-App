@@ -24,6 +24,15 @@ const navButton: CSSProperties = {
   cursor: 'pointer'
 }
 
+/** Outline drawn round a place a task can be dropped. */
+const dropHighlight = `inset 0 0 0 1px ${t.markerActive}`
+
+/** Where a dragged task will land. */
+type Drop =
+  | { kind: 'grid'; column: number; day: string; start: number; end: number }
+  | { kind: 'untimed'; column: number; day: string }
+  | { kind: 'undated' }
+
 const shortDate = (d: Date): string =>
   d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 
@@ -72,11 +81,13 @@ export const WeekView: FC<{
   today: Date
   /** Tasks for the week, plus the day before it (for blocks that run past midnight). */
   tasks: Task[]
+  /** Open tasks with no date, shown in the tray at the bottom. */
+  undated: Task[]
   nowMinutes: number
   onOpen?: (id: string) => void
-  /** Called when a block is dragged to a new day or time. */
-  onMove?: (id: string, to: { day: string; start: number; end: number }) => void
-}> = ({ weekStart, today, tasks, nowMinutes, onOpen, onMove }) => {
+  /** Called when a task is dragged somewhere new. A missing day or time clears it. */
+  onMove?: (id: string, to: { day?: string; start?: number; end?: number }) => void
+}> = ({ weekStart, today, tasks, undated, nowMinutes, onOpen, onMove }) => {
   const todayKey = localDay(today)
   const columns = Array.from({ length: 7 }, (_, i) => {
     const date = addDays(weekStart, i)
@@ -105,106 +116,304 @@ export const WeekView: FC<{
     didScroll.current = true
   }, [nowTop])
 
-  // Dragging a task with no time: where on the grid the pointer was when it
-  // was pressed (`min`), and how far down it must travel to leave the header.
   const headerRef = useRef<HTMLDivElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
-  const [chip, setChip] = useState<{ min: number; minDy: number } | null>(null)
+  const trayRef = useRef<HTMLDivElement>(null)
+  const [trayOpen, setTrayOpen] = useState(false)
+  const [target, setTarget] = useState<Drop | null>(null)
+  const findTask = (id: string): Task | undefined =>
+    [...tasks, ...undated].find((item) => item.id === id)
 
-  const startChipDrag = (id: string, event: React.PointerEvent<HTMLElement>): void => {
-    const header = headerRef.current?.getBoundingClientRect()
+  /** Where a dragged task would land: in the tray, under a date, or on the grid. */
+  const dropTarget = (d: BlockDrag): Drop | null => {
+    const task = findTask(d.id)
     const grid = gridRef.current?.getBoundingClientRect()
-    if (!header || !grid) return
-    setChip({
-      min: ((event.clientY - grid.top - GRID_PAD) / HOUR_PX) * 60,
-      minDy: header.bottom - event.clientY
-    })
-    startDrag(id, event)
-  }
+    const header = headerRef.current?.getBoundingClientRect()
+    const tray = trayRef.current?.getBoundingClientRect()
+    if (!task || !grid || !header) return null
+    if (tray && d.y >= tray.top) return { kind: 'undated' }
 
-  const dropTarget = (
-    d: BlockDrag
-  ): { column: number; day: string; start: number; end: number } | null => {
-    const task = tasks.find((item) => item.id === d.id)
-    if (!task || d.columnWidth === 0) return null
-    const from = columns.findIndex((column) => column.key === task.day)
-    if (from < 0) return null
-    const column = Math.min(6, Math.max(0, from + Math.round(d.dx / d.columnWidth)))
-    const deltaMin = (d.dy / HOUR_PX) * 60
+    // The column under the pointer.
+    const columnWidth = (grid.width - GUTTER) / 7
+    const column = Math.min(6, Math.max(0, Math.floor((d.x - grid.left - GUTTER) / columnWidth)))
+    const day = columns[column].key
+    if (d.y <= header.bottom) return { kind: 'untimed', column, day }
+
+    // On the grid. A timed block moves by as far as it was dragged; a task with
+    // no time gets a 30-minute slot where the pointer is.
     if (isBlocked(task)) {
-      return { column, day: columns[column].key, ...moveBlock(task.start, task.end, deltaMin) }
+      return {
+        kind: 'grid',
+        column,
+        day,
+        ...moveBlock(task.start, task.end, (d.dy / HOUR_PX) * 60)
+      }
     }
-    // A task with no time only lands once it has been dragged below the header.
-    if (!chip || d.dy < chip.minDy) return null
-    return {
-      column,
-      day: columns[column].key,
-      ...moveBlock(chip.min, chip.min + NEW_BLOCK_MIN, deltaMin)
-    }
+    const min = ((d.y - grid.top - GRID_PAD) / HOUR_PX) * 60
+    return { kind: 'grid', column, day, ...moveBlock(min, min + NEW_BLOCK_MIN, 0) }
   }
 
   const { drag, startDrag } = useBlockDrag({
     onClick: onOpen,
+    onDragMove: (d) => setTarget(dropTarget(d)),
     onDrop: (d) => {
-      const target = dropTarget(d)
-      const task = tasks.find((item) => item.id === d.id)
-      if (!target || !task) return
-      if (target.day === task.day && target.start === task.start) return // didn't move
-      onMove?.(d.id, { day: target.day, start: target.start, end: target.end })
+      const to = dropTarget(d)
+      const task = findTask(d.id)
+      if (!to || !task) return
+      if (to.kind === 'undated') {
+        if (task.day) onMove?.(task.id, {})
+      } else if (to.kind === 'untimed') {
+        if (task.day !== to.day || task.start != null) onMove?.(task.id, { day: to.day })
+      } else if (task.day !== to.day || task.start !== to.start) {
+        onMove?.(task.id, { day: to.day, start: to.start, end: to.end })
+      }
     }
   })
-  const target = drag ? dropTarget(drag) : null
+  // Only draw the drop preview while a drag is in progress.
+  const drop = drag ? target : null
 
   return (
-    <div ref={scrollRef} style={{ flex: 1, minHeight: 0, minWidth: 620, overflowY: 'auto' }}>
-      {/* Day names, dates, and tasks that have a day but no time. Stays pinned while scrolling */}
-      <div
-        ref={headerRef}
-        style={{
-          display: 'flex',
-          paddingLeft: GUTTER,
-          position: 'sticky',
-          top: 0,
-          zIndex: 2,
-          background: t.shell
-        }}
-      >
-        {columns.map((column) => (
-          <div
-            key={column.key}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              padding: '0 4px 12px',
-              opacity: column.date.getDay() % 6 === 0 ? 0.7 : 1 // dim Sat and Sun
-            }}
-          >
-            <div style={{ ...eyebrow, color: column.isToday ? t.textMax : t.text5 }}>
-              {column.date.toLocaleDateString(undefined, { weekday: 'short' })}
-            </div>
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div ref={scrollRef} style={{ flex: 1, minHeight: 0, minWidth: 620, overflowY: 'auto' }}>
+        {/* Day names, dates, and tasks that have a day but no time. Stays pinned while scrolling */}
+        <div
+          ref={headerRef}
+          style={{
+            display: 'flex',
+            paddingLeft: GUTTER,
+            position: 'sticky',
+            top: 0,
+            zIndex: 2,
+            background: t.shell
+          }}
+        >
+          {columns.map((column, columnIndex) => (
             <div
+              key={column.key}
               style={{
-                marginTop: 6,
-                fontSize: 20,
-                fontWeight: 500,
-                color: column.isToday ? t.textMax : t.text3
+                flex: 1,
+                minWidth: 0,
+                padding: '0 4px 12px',
+                borderRadius: 8,
+                boxShadow:
+                  drop?.kind === 'untimed' && drop.column === columnIndex
+                    ? dropHighlight
+                    : undefined,
+                opacity: column.date.getDay() % 6 === 0 ? 0.7 : 1 // dim Sat and Sun
               }}
             >
-              {column.date.getDate()}
-            </div>
-            {column.untimed.map((task) => (
+              <div style={{ ...eyebrow, color: column.isToday ? t.textMax : t.text5 }}>
+                {column.date.toLocaleDateString(undefined, { weekday: 'short' })}
+              </div>
               <div
-                key={task.id}
-                onPointerDown={(e) => startChipDrag(task.id, e)}
-                title={task.title}
                 style={{
                   marginTop: 6,
-                  padding: '4px 6px',
+                  fontSize: 20,
+                  fontWeight: 500,
+                  color: column.isToday ? t.textMax : t.text3
+                }}
+              >
+                {column.date.getDate()}
+              </div>
+              {column.untimed.map((task) => (
+                <div
+                  key={task.id}
+                  onPointerDown={(e) => startDrag(task.id, e)}
+                  title={task.title}
+                  style={{
+                    marginTop: 6,
+                    padding: '4px 6px',
+                    borderRadius: 6,
+                    background: t.surface1,
+                    fontSize: 12,
+                    color: task.done ? t.text5 : t.text2,
+                    textDecoration: task.done ? 'line-through' : undefined,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    opacity: drag?.id === task.id ? 0.3 : 1,
+                    cursor: 'grab',
+                    userSelect: 'none'
+                  }}
+                >
+                  {task.title}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+
+        {/* The hour grid */}
+        <div ref={gridRef} style={{ display: 'flex', height: height + 8, paddingTop: GRID_PAD }}>
+          <div style={{ width: GUTTER, flex: 'none', position: 'relative' }}>
+            {Array.from({ length: endHour - startHour + 1 }, (_, i) => (
+              <div
+                key={i}
+                style={{
+                  position: 'absolute',
+                  top: i * HOUR_PX - 5,
+                  font: `400 10px ${t.mono}`,
+                  color: t.text5
+                }}
+              >
+                {String((startHour + i) % 24).padStart(2, '0')}
+              </div>
+            ))}
+          </div>
+
+          {columns.map((column, columnIndex) => (
+            <div
+              key={column.key}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                height,
+                position: 'relative',
+                borderLeft: `1px solid ${t.hairline}`,
+                background: `linear-gradient(${t.hairline} 1px,transparent 1px)`,
+                backgroundSize: `100% ${HOUR_PX}px`
+              }}
+            >
+              {column.blocks.map((block) => {
+                const top = ((block.start - startHour * 60) / 60) * HOUR_PX
+                const blockHeight = Math.max(((block.end - block.start) / 60) * HOUR_PX, 16)
+                // The piece on the task's own day can be dragged. The piece that
+                // spills past midnight into the next day only opens the editor.
+                const draggable = block.task.day === column.key
+                const dragging = drag?.id === block.task.id
+
+                return (
+                  <div
+                    key={block.task.id}
+                    onPointerDown={draggable ? (e) => startDrag(block.task.id, e) : undefined}
+                    onClick={draggable ? undefined : () => onOpen?.(block.task.id)}
+                    title={`${block.task.title} · ${fmtRange(block.task.start, block.task.end)}`}
+                    style={{
+                      position: 'absolute',
+                      left: 3,
+                      right: 3,
+                      top,
+                      height: blockHeight,
+                      boxSizing: 'border-box',
+                      padding: '3px 6px',
+                      borderRadius: 6,
+                      overflow: 'hidden',
+                      background: column.isToday ? t.surface2 : t.fill,
+                      borderLeft: `2px solid ${column.isToday ? t.markerActive : t.markerIdle}`,
+                      opacity: dragging ? 0.3 : block.task.done ? 0.45 : 1,
+                      cursor: draggable ? 'grab' : 'pointer',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 11.5,
+                        lineHeight: 1.2,
+                        color: t.text2,
+                        textDecoration: block.task.done ? 'line-through' : undefined,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }}
+                    >
+                      {block.task.title}
+                    </div>
+                    {blockHeight >= 30 && (
+                      <div style={{ marginTop: 2, font: `400 9.5px ${t.mono}`, color: t.text4 }}>
+                        {fmt(block.start)}–{fmt(block.end)}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+
+              {/* Preview of where the dragged block will land */}
+              {drop?.kind === 'grid' && drop.column === columnIndex && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 3,
+                    right: 3,
+                    top: (drop.start / 60) * HOUR_PX,
+                    height: Math.max(((Math.min(drop.end, 1440) - drop.start) / 60) * HOUR_PX, 16),
+                    boxSizing: 'border-box',
+                    padding: '3px 6px',
+                    borderRadius: 6,
+                    background: t.surface3,
+                    border: `1px solid ${t.markerActive}`,
+                    font: `400 9.5px ${t.mono}`,
+                    color: t.textMax,
+                    pointerEvents: 'none',
+                    zIndex: 1
+                  }}
+                >
+                  {fmtRange(drop.start, drop.end)}
+                </div>
+              )}
+
+              {column.isToday && nowTop >= 0 && nowTop <= height && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: nowTop,
+                    height: 1,
+                    background: t.textMax
+                  }}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Tasks with no date. Click the bar to open it; it also opens during a drag. */}
+      <div
+        ref={trayRef}
+        style={{
+          flex: 'none',
+          marginTop: 8,
+          padding: '8px 10px',
+          borderRadius: 8,
+          background: t.surface1,
+          boxShadow: drop?.kind === 'undated' ? dropHighlight : undefined
+        }}
+      >
+        <button
+          onClick={() => setTrayOpen(!trayOpen)}
+          style={{ ...navButton, background: 'transparent', padding: 0 }}
+        >
+          {trayOpen || drag ? '▾' : '▴'} No date · {undated.length}
+        </button>
+        {(trayOpen || drag) && (
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 6,
+              marginTop: 8,
+              maxHeight: 96,
+              overflowY: 'auto'
+            }}
+          >
+            {undated.length === 0 && (
+              <div style={{ fontSize: 12, color: t.text5 }}>
+                Nothing here. Drop a task here to take its date off.
+              </div>
+            )}
+            {undated.map((task) => (
+              <div
+                key={task.id}
+                onPointerDown={(e) => startDrag(task.id, e)}
+                title={task.title}
+                style={{
+                  maxWidth: 180,
+                  padding: '4px 8px',
                   borderRadius: 6,
-                  background: t.surface1,
+                  background: t.surface2,
                   fontSize: 12,
-                  color: task.done ? t.text5 : t.text2,
-                  textDecoration: task.done ? 'line-through' : undefined,
+                  color: t.text2,
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -217,134 +426,7 @@ export const WeekView: FC<{
               </div>
             ))}
           </div>
-        ))}
-      </div>
-
-      {/* The hour grid */}
-      <div ref={gridRef} style={{ display: 'flex', height: height + 8, paddingTop: GRID_PAD }}>
-        <div style={{ width: GUTTER, flex: 'none', position: 'relative' }}>
-          {Array.from({ length: endHour - startHour + 1 }, (_, i) => (
-            <div
-              key={i}
-              style={{
-                position: 'absolute',
-                top: i * HOUR_PX - 5,
-                font: `400 10px ${t.mono}`,
-                color: t.text5
-              }}
-            >
-              {String((startHour + i) % 24).padStart(2, '0')}
-            </div>
-          ))}
-        </div>
-
-        {columns.map((column, columnIndex) => (
-          <div
-            key={column.key}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              height,
-              position: 'relative',
-              borderLeft: `1px solid ${t.hairline}`,
-              background: `linear-gradient(${t.hairline} 1px,transparent 1px)`,
-              backgroundSize: `100% ${HOUR_PX}px`
-            }}
-          >
-            {column.blocks.map((block) => {
-              const top = ((block.start - startHour * 60) / 60) * HOUR_PX
-              const blockHeight = Math.max(((block.end - block.start) / 60) * HOUR_PX, 16)
-              // The piece on the task's own day can be dragged. The piece that
-              // spills past midnight into the next day only opens the editor.
-              const draggable = block.task.day === column.key
-              const dragging = drag?.id === block.task.id
-
-              return (
-                <div
-                  key={block.task.id}
-                  onPointerDown={draggable ? (e) => startDrag(block.task.id, e) : undefined}
-                  onClick={draggable ? undefined : () => onOpen?.(block.task.id)}
-                  title={`${block.task.title} · ${fmtRange(block.task.start, block.task.end)}`}
-                  style={{
-                    position: 'absolute',
-                    left: 3,
-                    right: 3,
-                    top,
-                    height: blockHeight,
-                    boxSizing: 'border-box',
-                    padding: '3px 6px',
-                    borderRadius: 6,
-                    overflow: 'hidden',
-                    background: column.isToday ? t.surface2 : t.fill,
-                    borderLeft: `2px solid ${column.isToday ? t.markerActive : t.markerIdle}`,
-                    opacity: dragging ? 0.3 : block.task.done ? 0.45 : 1,
-                    cursor: draggable ? 'grab' : 'pointer',
-                    userSelect: 'none'
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 11.5,
-                      lineHeight: 1.2,
-                      color: t.text2,
-                      textDecoration: block.task.done ? 'line-through' : undefined,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis'
-                    }}
-                  >
-                    {block.task.title}
-                  </div>
-                  {blockHeight >= 30 && (
-                    <div style={{ marginTop: 2, font: `400 9.5px ${t.mono}`, color: t.text4 }}>
-                      {fmt(block.start)}–{fmt(block.end)}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-
-            {/* Preview of where the dragged block will land */}
-            {target && target.column === columnIndex && (
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 3,
-                  right: 3,
-                  top: (target.start / 60) * HOUR_PX,
-                  height: Math.max(
-                    ((Math.min(target.end, 1440) - target.start) / 60) * HOUR_PX,
-                    16
-                  ),
-                  boxSizing: 'border-box',
-                  padding: '3px 6px',
-                  borderRadius: 6,
-                  background: t.surface3,
-                  border: `1px solid ${t.markerActive}`,
-                  font: `400 9.5px ${t.mono}`,
-                  color: t.textMax,
-                  pointerEvents: 'none',
-                  zIndex: 1
-                }}
-              >
-                {fmtRange(target.start, target.end)}
-              </div>
-            )}
-
-            {column.isToday && nowTop >= 0 && nowTop <= height && (
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  right: 0,
-                  top: nowTop,
-                  height: 1,
-                  background: t.textMax
-                }}
-              />
-            )}
-          </div>
-        ))}
+        )}
       </div>
     </div>
   )

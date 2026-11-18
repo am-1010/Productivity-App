@@ -781,7 +781,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
   }
 
   /** Drag and drop: gives a task a new day and time, keeping its title and notes. */
-  const moveTask = (id: string, to: { day: string; start: number; end: number }): void => {
+  const moveTask = (id: string, to: { day?: string; start?: number; end?: number }): void => {
     const task = [...tasks, ...upcoming, ...week].find((item) => item.id === id)
     if (!task) return
     onUpdateTask?.(id, { title: task.title, notes: task.notes, ...to }).catch((err) =>
@@ -1019,6 +1019,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
               weekStart={weekStart}
               today={date}
               tasks={week}
+              undated={tasks.filter((task) => !task.day && !task.done)}
               nowMinutes={nowMinutes}
               onOpen={onOpenTask}
               onMove={moveTask}
