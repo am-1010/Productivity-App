@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 
 /** Moving less than this many pixels counts as a click, not a drag */
@@ -29,6 +29,12 @@ export function useBlockDrag(options: {
 } {
   const [drag, setDrag] = useState<BlockDrag | null>(null)
 
+  // Always call the newest onDrop/onClick, not the ones from when the drag began.
+  const latest = useRef(options)
+  useEffect(() => {
+    latest.current = options
+  })
+
   const startDrag = (id: string, event: ReactPointerEvent<HTMLElement>): void => {
     if (event.button !== 0) return // left button only
     event.preventDefault() // don't start selecting text
@@ -55,8 +61,8 @@ export function useBlockDrag(options: {
 
     const onUp = (): void => {
       stop()
-      if (current) options.onDrop(current)
-      else options.onClick?.(id)
+      if (current) latest.current.onDrop(current)
+      else latest.current.onClick?.(id)
     }
 
     const onKey = (e: KeyboardEvent): void => {

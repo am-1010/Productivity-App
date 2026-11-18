@@ -690,6 +690,15 @@ export const TodayView: React.FC<TodayViewProps> = ({
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const formRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!adding) return
+    const onDown = (e: PointerEvent): void => {
+      if (formRef.current && !formRef.current.contains(e.target as Node)) setAdding(false)
+    }
+    window.addEventListener('pointerdown', onDown)
+    return () => window.removeEventListener('pointerdown', onDown)
+  }, [adding])
   const open = tasks.filter((task) => !task.done)
   const done = tasks.filter((task) => task.done)
   const current = open.find(
@@ -828,7 +837,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
               />
             )}
           </div>
-          <div style={{ position: 'relative' }}>
+          <div ref={formRef} style={{ position: 'relative' }}>
             <button
               onClick={() => {
                 if (adding && !editingId) {
@@ -855,6 +864,15 @@ export const TodayView: React.FC<TodayViewProps> = ({
 
             {adding && (
               <div
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setAdding(false)
+                  if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
+                  const tag = (e.target as HTMLElement).tagName
+                  if (tag === 'BUTTON') return // the button handles Enter itself
+                  if (tag === 'TEXTAREA' && !e.metaKey && !e.ctrlKey) return // new line in notes
+                  e.preventDefault()
+                  void submitNewTask()
+                }}
                 style={{
                   position: 'absolute', // float, don't take up layout space
                   top: 'calc(100% + 8px)', // 8px below the button
@@ -872,10 +890,6 @@ export const TodayView: React.FC<TodayViewProps> = ({
                   autoFocus
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void submitNewTask()
-                    if (e.key === 'Escape') setAdding(false)
-                  }}
                   placeholder="Task title…"
                   style={{ ...fieldStyle, fontSize: 16 }}
                 />

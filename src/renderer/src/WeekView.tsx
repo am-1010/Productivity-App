@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, FC } from 'react'
 import type { Task } from '../../shared/types'
 import { addDays, localDay, startOfWeek } from './day'
@@ -9,6 +9,10 @@ import { useBlockDrag, type BlockDrag } from './useBlockDrag'
 const HOUR_PX = 44
 /** Width of the hour labels down the left side. */
 const GUTTER = 40
+/** Length given to a task with no time when it is dragged onto the grid. */
+const NEW_BLOCK_MIN = 30
+/** Space above 00:00 in the hour grid. */
+const GRID_PAD = 6
 
 const navButton: CSSProperties = {
   border: 'none',
@@ -101,18 +105,41 @@ export const WeekView: FC<{
     didScroll.current = true
   }, [nowTop])
 
+  // Dragging a task with no time: where on the grid the pointer was when it
+  // was pressed (`min`), and how far down it must travel to leave the header.
+  const headerRef = useRef<HTMLDivElement>(null)
+  const gridRef = useRef<HTMLDivElement>(null)
+  const [chip, setChip] = useState<{ min: number; minDy: number } | null>(null)
+
+  const startChipDrag = (id: string, event: React.PointerEvent<HTMLElement>): void => {
+    const header = headerRef.current?.getBoundingClientRect()
+    const grid = gridRef.current?.getBoundingClientRect()
+    if (!header || !grid) return
+    setChip({
+      min: ((event.clientY - grid.top - GRID_PAD) / HOUR_PX) * 60,
+      minDy: header.bottom - event.clientY
+    })
+    startDrag(id, event)
+  }
+
   const dropTarget = (
     d: BlockDrag
   ): { column: number; day: string; start: number; end: number } | null => {
     const task = tasks.find((item) => item.id === d.id)
-    if (!task || !isBlocked(task) || d.columnWidth === 0) return null
+    if (!task || d.columnWidth === 0) return null
     const from = columns.findIndex((column) => column.key === task.day)
     if (from < 0) return null
     const column = Math.min(6, Math.max(0, from + Math.round(d.dx / d.columnWidth)))
+    const deltaMin = (d.dy / HOUR_PX) * 60
+    if (isBlocked(task)) {
+      return { column, day: columns[column].key, ...moveBlock(task.start, task.end, deltaMin) }
+    }
+    // A task with no time only lands once it has been dragged below the header.
+    if (!chip || d.dy < chip.minDy) return null
     return {
       column,
       day: columns[column].key,
-      ...moveBlock(task.start, task.end, (d.dy / HOUR_PX) * 60)
+      ...moveBlock(chip.min, chip.min + NEW_BLOCK_MIN, deltaMin)
     }
   }
 
@@ -132,6 +159,7 @@ export const WeekView: FC<{
     <div ref={scrollRef} style={{ flex: 1, minHeight: 0, minWidth: 620, overflowY: 'auto' }}>
       {/* Day names, dates, and tasks that have a day but no time. Stays pinned while scrolling */}
       <div
+        ref={headerRef}
         style={{
           display: 'flex',
           paddingLeft: GUTTER,
@@ -167,7 +195,7 @@ export const WeekView: FC<{
             {column.untimed.map((task) => (
               <div
                 key={task.id}
-                onClick={() => onOpen?.(task.id)}
+                onPointerDown={(e) => startChipDrag(task.id, e)}
                 title={task.title}
                 style={{
                   marginTop: 6,
@@ -180,7 +208,9 @@ export const WeekView: FC<{
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
-                  cursor: 'pointer'
+                  opacity: drag?.id === task.id ? 0.3 : 1,
+                  cursor: 'grab',
+                  userSelect: 'none'
                 }}
               >
                 {task.title}
@@ -191,7 +221,7 @@ export const WeekView: FC<{
       </div>
 
       {/* The hour grid */}
-      <div style={{ display: 'flex', height: height + 8, paddingTop: 6 }}>
+      <div ref={gridRef} style={{ display: 'flex', height: height + 8, paddingTop: GRID_PAD }}>
         <div style={{ width: GUTTER, flex: 'none', position: 'relative' }}>
           {Array.from({ length: endHour - startHour + 1 }, (_, i) => (
             <div
