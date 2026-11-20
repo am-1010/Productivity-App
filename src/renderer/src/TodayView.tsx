@@ -31,7 +31,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { NewTaskInput, Task } from '../../shared/types'
 import { dayHeading, localDay } from './day'
-import { eyebrow, t } from './theme'
+import { dropHighlight, eyebrow, t } from './theme'
 import { WeekNav, WeekView } from './WeekView'
 import {
   blockedMinutes,
@@ -43,7 +43,7 @@ import {
   toMinutes,
   fmtDuration
 } from './time'
-import { useBlockDrag } from './useBlockDrag'
+import { useBlockDrag, type BlockDrag } from './useBlockDrag'
 
 /* ------------------------------------------------------------------- types */
 
@@ -77,6 +77,11 @@ export type NavKey = 'today' | 'inbox' | 'week' | 'search' | 'account'
 /* --------------------------------------------------------------- utilities */
 
 const HOUR_PX = 54
+/** Length given to a task with no time when it is dragged onto the timeline. */
+const NEW_BLOCK_MIN = 30
+
+/** Where a task dragged on the Today page will land. */
+type TodayDrop = { kind: 'rail'; start: number; end: number } | { kind: 'unscheduled' }
 
 /* ---------------------------------------------------------------- subviews */
 
@@ -302,7 +307,11 @@ const TaskRow: React.FC<{
   onToggle?: () => void
   onOpen?: () => void
   onDelete?: () => void
-}> = ({ task, now, onToggle, onOpen, onDelete }) => {
+  /** Faded while it is being dragged. */
+  dragging?: boolean
+  /** Makes the row draggable. A click without moving still opens it. */
+  onPointerDown?: (event: React.PointerEvent<HTMLElement>) => void
+}> = ({ task, now, onToggle, onOpen, onDelete, dragging, onPointerDown }) => {
   const meta = [
     isBlocked(task) ? fmtRange(task.start, task.end) : task.start != null ? fmt(task.start) : null,
     task.project ?? (task.source ? `from ${task.source}` : null)
@@ -310,14 +319,21 @@ const TaskRow: React.FC<{
 
   return (
     <div
-      onClick={onOpen}
+      data-task
+      onClick={onPointerDown ? undefined : onOpen}
+      onPointerDown={(e) => {
+        // The tick and × buttons inside the row do their own thing.
+        if (!(e.target as HTMLElement).closest('button')) onPointerDown?.(e)
+      }}
       style={{
         display: 'flex',
         alignItems: 'center',
         gap: 14,
         padding: now ? '14px' : '13px 14px',
         borderRadius: 10,
-        cursor: 'pointer',
+        cursor: onPointerDown ? 'grab' : 'pointer',
+        userSelect: 'none',
+        opacity: dragging ? 0.3 : 1,
         background: now ? t.surface2 : 'transparent'
       }}
     >
@@ -423,6 +439,7 @@ const TimeBlock: React.FC<{
 
   return (
     <div
+      data-task
       onPointerDown={onPointerDown}
       style={{
         position: 'absolute',
@@ -475,10 +492,14 @@ const DayRail: React.FC<{
   nowMinutes: number
   floor?: number
   end?: number
-  onOpen?: (id: string) => void
-  /** Called when a block is dragged to a new time. */
-  onMove?: (id: string, to: { day: string; start: number; end: number }) => void
-}> = ({ tasks, nowMinutes, floor, end, onOpen, onMove }) => {
+  /** Attached to the hour grid, so a drag can tell where on it the pointer is. */
+  gridRef?: React.Ref<HTMLDivElement>
+  /** The block being dragged, faded in place. */
+  draggingId?: string
+  /** Where the dragged task would land, drawn as a highlighted block. */
+  preview?: Task
+  onBlockPointerDown?: (id: string, event: React.PointerEvent<HTMLElement>) => void
+}> = ({ tasks, nowMinutes, floor, end, gridRef, draggingId, preview, onBlockPointerDown }) => {
   const { startHour, endHour } = useMemo(() => railRange(tasks, floor, end), [tasks, floor, end])
   const hasBlocks = tasks.some(isBlocked)
   const hours = endHour - startHour
@@ -492,17 +513,6 @@ const DayRail: React.FC<{
     railRef.current.scrollTop = Math.max(0, nowTop - 150)
     didScroll.current = true
   }, [nowTop])
-
-  const { drag, startDrag } = useBlockDrag({
-    onClick: onOpen,
-    onDrop: (d) => {
-      const task = tasks.find((item) => item.id === d.id)
-      if (!task || !isBlocked(task) || !task.day) return
-      const to = moveBlock(task.start, task.end, (d.dy / HOUR_PX) * 60)
-      if (to.start !== task.start) onMove?.(d.id, { day: task.day, ...to })
-    }
-  })
-  const dragged = drag ? tasks.filter(isBlocked).find((task) => task.id === drag.id) : undefined
 
   return (
     <aside
@@ -522,7 +532,10 @@ const DayRail: React.FC<{
         </div>
       </div>
 
-      <div style={{ marginTop: 18, position: 'relative', height: hours * HOUR_PX + HOUR_PX }}>
+      <div
+        ref={gridRef}
+        style={{ marginTop: 18, position: 'relative', height: hours * HOUR_PX + HOUR_PX }}
+      >
         {Array.from({ length: hours + 1 }, (_, i) => (
           <div
             key={i}
@@ -576,23 +589,13 @@ const DayRail: React.FC<{
             task={task}
             startHour={startHour}
             current={nowMinutes >= task.start && nowMinutes < task.end}
-            dragging={drag?.id === task.id}
-            onPointerDown={(e) => startDrag(task.id, e)}
+            dragging={draggingId === task.id}
+            onPointerDown={(e) => onBlockPointerDown?.(task.id, e)}
           />
         ))}
 
-        {/* Preview of where the dragged block will land */}
-        {drag && dragged && (
-          <TimeBlock
-            task={{
-              ...dragged,
-              ...moveBlock(dragged.start, dragged.end, (drag.dy / HOUR_PX) * 60)
-            }}
-            startHour={startHour}
-            current={false}
-            preview
-          />
-        )}
+        {/* Preview of where the dragged task will land */}
+        {preview && <TimeBlock task={preview} startHour={startHour} current={false} preview />}
 
         {nowVisible && (
           <div
@@ -694,7 +697,10 @@ export const TodayView: React.FC<TodayViewProps> = ({
   useEffect(() => {
     if (!adding) return
     const onDown = (e: PointerEvent): void => {
-      if (formRef.current && !formRef.current.contains(e.target as Node)) setAdding(false)
+      const target = e.target as HTMLElement
+      // Clicks on tasks are left to onOpenTask, which switches or closes the form.
+      if (target.closest('[data-task]')) return
+      if (formRef.current && !formRef.current.contains(target)) setAdding(false)
     }
     window.addEventListener('pointerdown', onDown)
     return () => window.removeEventListener('pointerdown', onDown)
@@ -774,6 +780,11 @@ export const TodayView: React.FC<TodayViewProps> = ({
 
   /** Clicking a task row opens it in the form for editing */
   const onOpenTask = (id: string): void => {
+    // Clicking the task that is already open closes the form again.
+    if (adding && editingId === id) {
+      setAdding(false)
+      return
+    }
     const task = [...tasks, ...upcoming, ...week].find((item) => item.id === id)
     if (!task) return
     fillForm(task)
@@ -784,9 +795,66 @@ export const TodayView: React.FC<TodayViewProps> = ({
   const moveTask = (id: string, to: { day?: string; start?: number; end?: number }): void => {
     const task = [...tasks, ...upcoming, ...week].find((item) => item.id === id)
     if (!task) return
+    if (editingId === id) setAdding(false) // the open form would show the old time
     onUpdateTask?.(id, { title: task.title, notes: task.notes, ...to }).catch((err) =>
       console.error('Failed to move task', err)
     )
+  }
+
+  // Dragging on the Today page. Rows in the list and blocks on the timeline share
+  // one drag, so a task can go from either onto the timeline (it gets a time) or
+  // into the Unscheduled section (it loses its time).
+  const railGridRef = useRef<HTMLDivElement>(null)
+  const unscheduledRef = useRef<HTMLDivElement>(null)
+  const dragFrom = useRef<'list' | 'rail'>('list')
+  const [todayTarget, setTodayTarget] = useState<TodayDrop | null>(null)
+
+  const todayDropTarget = (d: BlockDrag): TodayDrop | null => {
+    const task = tasks.find((item) => item.id === d.id)
+    if (!task) return null
+    const grid = railGridRef.current?.getBoundingClientRect()
+    if (grid && d.x >= grid.left && d.x <= grid.right) {
+      // A block dragged along the timeline moves by as far as it was dragged.
+      if (dragFrom.current === 'rail' && isBlocked(task)) {
+        return { kind: 'rail', ...moveBlock(task.start, task.end, (d.dy / HOUR_PX) * 60) }
+      }
+      // A row dragged over from the list starts where the pointer is.
+      const { startHour } = railRange(tasks, railFloorHour, railEndHour)
+      const min = startHour * 60 + ((d.y - grid.top) / HOUR_PX) * 60
+      const length = isBlocked(task) ? task.end - task.start : NEW_BLOCK_MIN
+      return { kind: 'rail', ...moveBlock(min, min + length, 0) }
+    }
+    const list = unscheduledRef.current?.getBoundingClientRect()
+    if (list && d.x >= list.left && d.x <= list.right && d.y >= list.top && d.y <= list.bottom) {
+      return { kind: 'unscheduled' }
+    }
+    return null
+  }
+
+  const { drag, startDrag } = useBlockDrag({
+    onClick: onOpenTask,
+    onDragMove: (d) => setTodayTarget(todayDropTarget(d)),
+    onDrop: (d) => {
+      const to = todayDropTarget(d)
+      const task = tasks.find((item) => item.id === d.id)
+      if (!to || !task) return
+      if (to.kind === 'unscheduled') {
+        if (task.start != null) moveTask(task.id, { day: task.day })
+      } else if (to.start !== task.start || !task.day) {
+        moveTask(task.id, { day: task.day ?? localDay(date), start: to.start, end: to.end })
+      }
+    }
+  })
+  // Only show drop feedback while a drag is in progress.
+  const todayDrop = drag ? todayTarget : null
+  const dragged = drag ? tasks.find((task) => task.id === drag.id) : undefined
+  const dragTask = (
+    from: 'list' | 'rail',
+    id: string,
+    event: React.PointerEvent<HTMLElement>
+  ): void => {
+    dragFrom.current = from
+    startDrag(id, event)
   }
 
   return (
@@ -1043,6 +1111,8 @@ export const TodayView: React.FC<TodayViewProps> = ({
                     onToggle={() => onToggleTask?.(current.id)}
                     onDelete={() => onDeleteTask?.(current.id)}
                     onOpen={() => onOpenTask?.(current.id)}
+                    dragging={drag?.id === current.id}
+                    onPointerDown={(e) => dragTask('list', current.id, e)}
                   />
                   <div style={{ height: 14 }} />
                 </>
@@ -1059,6 +1129,8 @@ export const TodayView: React.FC<TodayViewProps> = ({
                         onToggle={() => onToggleTask?.(task.id)}
                         onOpen={() => onOpenTask?.(task.id)}
                         onDelete={() => onDeleteTask?.(task.id)}
+                        dragging={drag?.id === task.id}
+                        onPointerDown={(e) => dragTask('list', task.id, e)}
                       />
                     ))
                   ) : (
@@ -1068,33 +1140,44 @@ export const TodayView: React.FC<TodayViewProps> = ({
                   )}
                   <div style={{ height: 14 }} />
 
+                  {/* Drop a scheduled task or a timeline block here to take its time off */}
                   <div
+                    ref={unscheduledRef}
                     style={{
-                      ...eyebrow,
-                      display: 'flex',
-                      alignItems: 'baseline',
-                      justifyContent: 'space-between',
-                      marginBottom: 8
+                      borderRadius: 10,
+                      boxShadow: todayDrop?.kind === 'unscheduled' ? dropHighlight : undefined
                     }}
                   >
-                    <span>Unscheduled</span>
-                    {unscheduled.length > 0 && (
-                      <span style={{ color: t.text6 }}>Drag to block</span>
+                    <div
+                      style={{
+                        ...eyebrow,
+                        display: 'flex',
+                        alignItems: 'baseline',
+                        justifyContent: 'space-between',
+                        marginBottom: 8
+                      }}
+                    >
+                      <span>Unscheduled</span>
+                      {unscheduled.length > 0 && (
+                        <span style={{ color: t.text6 }}>Drag to block</span>
+                      )}
+                    </div>
+                    {unscheduled.length > 0 ? (
+                      unscheduled.map((task) => (
+                        <TaskRow
+                          key={task.id}
+                          task={task}
+                          onToggle={() => onToggleTask?.(task.id)}
+                          onOpen={() => onOpenTask?.(task.id)}
+                          onDelete={() => onDeleteTask?.(task.id)}
+                          dragging={drag?.id === task.id}
+                          onPointerDown={(e) => dragTask('list', task.id, e)}
+                        />
+                      ))
+                    ) : (
+                      <EmptyNote>Everything today has a time.</EmptyNote>
                     )}
                   </div>
-                  {unscheduled.length > 0 ? (
-                    unscheduled.map((task) => (
-                      <TaskRow
-                        key={task.id}
-                        task={task}
-                        onToggle={() => onToggleTask?.(task.id)}
-                        onOpen={() => onOpenTask?.(task.id)}
-                        onDelete={() => onDeleteTask?.(task.id)}
-                      />
-                    ))
-                  ) : (
-                    <EmptyNote>Everything today has a time.</EmptyNote>
-                  )}
                 </>
               )}
 
@@ -1127,9 +1210,39 @@ export const TodayView: React.FC<TodayViewProps> = ({
           nowMinutes={nowMinutes}
           floor={railFloorHour}
           end={railEndHour}
-          onOpen={onOpenTask}
-          onMove={moveTask}
+          gridRef={railGridRef}
+          draggingId={drag?.id}
+          preview={
+            dragged && todayDrop?.kind === 'rail'
+              ? { ...dragged, start: todayDrop.start, end: todayDrop.end }
+              : undefined
+          }
+          onBlockPointerDown={(id, e) => dragTask('rail', id, e)}
         />
+      )}
+
+      {/* The task's title follows the pointer while it is off the timeline */}
+      {drag && dragged && todayDrop?.kind !== 'rail' && (
+        <div
+          style={{
+            position: 'fixed',
+            left: drag.x + 12,
+            top: drag.y + 8,
+            maxWidth: 220,
+            padding: '5px 10px',
+            borderRadius: 6,
+            background: t.surface3,
+            color: t.text1,
+            fontSize: 12.5,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            pointerEvents: 'none',
+            zIndex: 30
+          }}
+        >
+          {dragged.title}
+        </div>
       )}
     </div>
   )

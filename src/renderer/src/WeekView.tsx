@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, FC } from 'react'
 import type { Task } from '../../shared/types'
 import { addDays, localDay, startOfWeek } from './day'
-import { eyebrow, t } from './theme'
+import { dropHighlight, eyebrow, t } from './theme'
 import { blocksForDay, fmt, fmtRange, isBlocked, moveBlock } from './time'
 import { useBlockDrag, type BlockDrag } from './useBlockDrag'
 
@@ -23,9 +23,6 @@ const navButton: CSSProperties = {
   padding: '5px 9px',
   cursor: 'pointer'
 }
-
-/** Outline drawn round a place a task can be dropped. */
-const dropHighlight = `inset 0 0 0 1px ${t.markerActive}`
 
 /** Where a dragged task will land. */
 type Drop =
@@ -217,6 +214,7 @@ export const WeekView: FC<{
               </div>
               {column.untimed.map((task) => (
                 <div
+                  data-task
                   key={task.id}
                   onPointerDown={(e) => startDrag(task.id, e)}
                   title={task.title}
@@ -284,6 +282,7 @@ export const WeekView: FC<{
 
                 return (
                   <div
+                    data-task
                     key={block.task.id}
                     onPointerDown={draggable ? (e) => startDrag(block.task.id, e) : undefined}
                     onClick={draggable ? undefined : () => onOpen?.(block.task.id)}
@@ -404,6 +403,7 @@ export const WeekView: FC<{
             )}
             {undated.map((task) => (
               <div
+                data-task
                 key={task.id}
                 onPointerDown={(e) => startDrag(task.id, e)}
                 title={task.title}

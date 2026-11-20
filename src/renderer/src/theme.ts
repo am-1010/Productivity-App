@@ -28,3 +28,6 @@ export const eyebrow: CSSProperties = {
   color: t.text5,
   textTransform: 'uppercase'
 }
+
+/** Outline drawn round a place a dragged task can be dropped. */
+export const dropHighlight = `inset 0 0 0 1px ${t.markerActive}`
