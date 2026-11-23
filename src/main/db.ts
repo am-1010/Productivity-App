@@ -10,6 +10,8 @@ export const {
   getTasksForDay,
   getUpcomingTasks,
   getTasksForRange,
+  searchTasks,
+  getDoneTasks,
   addTask,
   updateTask,
   toggleTask,

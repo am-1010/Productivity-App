@@ -6,6 +6,8 @@ export interface TaskStore {
   getTasksForDay(day: string): Task[]
   getUpcomingTasks(day: string): Task[]
   getTasksForRange(from: string, to: string): Task[]
+  searchTasks(query: string): Task[]
+  getDoneTasks(): Task[]
   addTask(input: NewTaskInput): void
   updateTask(id: string, input: NewTaskInput): void
   toggleTask(id: string): void
@@ -34,7 +36,8 @@ function toTask(r: TaskRow): Task {
     notes: r.notes ?? undefined,
     start: r.start_min ?? undefined,
     end: r.end_min ?? undefined,
-    done: r.done_at != null
+    done: r.done_at != null,
+    doneAt: r.done_at ?? undefined
   }
 }
 
@@ -112,6 +115,31 @@ export function openTaskStore(db: Database.Database): TaskStore {
              ORDER BY day, start_min IS NULL, start_min`
         )
         .all(from, to) as TaskRow[]
+      return rows.map(toTask)
+    },
+
+    // Every task whose title or notes contain `query`, in any case. Tasks with no
+    // date come first, then the newest day first. At most 100.
+    searchTasks(query: string): Task[] {
+      const text = query.trim()
+      if (!text) return []
+      // % and _ are wildcards in LIKE; escape them so they match themselves.
+      const pattern = `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+      const rows = db
+        .prepare(
+          `SELECT * FROM task
+            WHERE title LIKE @pattern ESCAPE '\\' OR notes LIKE @pattern ESCAPE '\\'
+            ORDER BY day IS NOT NULL, day DESC, start_min IS NULL, start_min LIMIT 100`
+        )
+        .all({ pattern }) as TaskRow[]
+      return rows.map(toTask)
+    },
+
+    // Finished tasks, most recently ticked off first. At most 200.
+    getDoneTasks(): Task[] {
+      const rows = db
+        .prepare('SELECT * FROM task WHERE done_at IS NOT NULL ORDER BY done_at DESC LIMIT 200')
+        .all() as TaskRow[]
       return rows.map(toTask)
     },
 

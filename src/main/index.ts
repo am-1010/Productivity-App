@@ -6,6 +6,8 @@ import {
   getTasksForDay,
   getUpcomingTasks,
   getTasksForRange,
+  searchTasks,
+  getDoneTasks,
   addTask,
   updateTask,
   toggleTask,
@@ -69,6 +71,8 @@ app.whenReady().then(() => {
   ipcMain.handle('tasks:add', (_event, input: NewTaskInput) => addTask(input))
   ipcMain.handle('tasks:range', (_event, from: string, to: string) => getTasksForRange(from, to))
   ipcMain.handle('tasks:update', (_event, id: string, input: NewTaskInput) => updateTask(id, input))
+  ipcMain.handle('tasks:search', (_event, query: string) => searchTasks(query))
+  ipcMain.handle('tasks:done', () => getDoneTasks())
   ipcMain.handle('tasks:toggle', (_event, id: string) => toggleTask(id))
   ipcMain.handle('tasks:delete', (_event, id: string) => deleteTask(id))
 

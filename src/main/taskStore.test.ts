@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { openTaskStore, type TaskStore } from './taskStore'
 
 // A fresh in-memory database for every test: fast, and your real tasks.db is
@@ -218,6 +218,65 @@ describe('getTasksForRange', () => {
       'Mon early',
       'Mon late',
       'Sun'
+    ])
+  })
+})
+
+describe('searchTasks', () => {
+  it('finds tasks by title or notes, in any case', () => {
+    store.addTask({ title: 'Essay draft', day: '2026-11-20' })
+    store.addTask({ title: 'Groceries', notes: 'milk, ESSAY paper' })
+    store.addTask({ title: 'Gym', day: '2026-11-21' })
+
+    expect(store.searchTasks('essay').map((t) => t.title)).toEqual(['Groceries', 'Essay draft'])
+  })
+
+  it('puts undated tasks first, then the newest day first', () => {
+    store.addTask({ title: 'Read old', day: '2026-11-01' })
+    store.addTask({ title: 'Read new', day: '2026-11-30' })
+    store.addTask({ title: 'Read someday' })
+
+    expect(store.searchTasks('read').map((t) => t.title)).toEqual([
+      'Read someday',
+      'Read new',
+      'Read old'
+    ])
+  })
+
+  it('treats % and _ as plain characters', () => {
+    store.addTask({ title: '100% done' })
+    store.addTask({ title: '1000 words' })
+    store.addTask({ title: 'snake_case' })
+    store.addTask({ title: 'snakeXcase' })
+
+    expect(store.searchTasks('0%').map((t) => t.title)).toEqual(['100% done'])
+    expect(store.searchTasks('e_c').map((t) => t.title)).toEqual(['snake_case'])
+  })
+
+  it('returns nothing for an empty search', () => {
+    store.addTask({ title: 'Anything' })
+    expect(store.searchTasks('  ')).toEqual([])
+  })
+})
+
+describe('getDoneTasks', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('returns only finished tasks, most recently finished first, with when they were done', () => {
+    store.addTask({ title: 'First', day: '2026-11-20' })
+    store.addTask({ title: 'Second', day: '2026-11-20' })
+    store.addTask({ title: 'Open', day: '2026-11-20' })
+    const [first, second] = store.getTasksForDay('2026-11-20')
+
+    vi.spyOn(Date, 'now').mockReturnValueOnce(1000).mockReturnValueOnce(2000)
+    store.toggleTask(first.id)
+    store.toggleTask(second.id)
+
+    expect(store.getDoneTasks().map((t) => [t.title, t.doneAt])).toEqual([
+      ['Second', 2000],
+      ['First', 1000]
     ])
   })
 })

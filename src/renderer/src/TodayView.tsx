@@ -30,7 +30,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { NewTaskInput, Task } from '../../shared/types'
-import { dayHeading, localDay } from './day'
+import { addDays, dayHeading, localDay } from './day'
 import { dropHighlight, eyebrow, t } from './theme'
 import { WeekNav, WeekView } from './WeekView'
 import {
@@ -53,6 +53,10 @@ export interface TodayViewProps {
   upcoming?: Task[]
   /** Tasks for the week view: the shown week plus the day before it. */
   week?: Task[]
+  /** Finished tasks for the Done tab, most recently finished first. */
+  done?: Task[]
+  /** Looks up tasks for the Search page. */
+  onSearch?: (query: string) => Promise<Task[]>
   /** Monday of the week the week view is showing. */
   weekStart?: Date
   onChangeWeek?: (start: Date) => void
@@ -72,7 +76,7 @@ export interface TodayViewProps {
   railEndHour?: number
 }
 
-export type NavKey = 'today' | 'inbox' | 'week' | 'search' | 'account'
+export type NavKey = 'today' | 'week' | 'search' | 'account'
 
 /* --------------------------------------------------------------- utilities */
 
@@ -99,17 +103,6 @@ const NAV: { key: NavKey; label: string; tip: string; icon: ReactNode }[] = [
     )
   },
   {
-    key: 'inbox',
-    label: 'Inbox',
-    tip: 'Inbox — new requests from Gmail, Slack and Linear waiting to be triaged',
-    icon: (
-      <>
-        <path d="M3 11.5V6a2.5 2.5 0 0 1 2.5-2.5h9A2.5 2.5 0 0 1 17 6v5.5" />
-        <path d="M3 11.5h3.6l1.1 2h4.6l1.1-2H17v2.5a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 3 14z" />
-      </>
-    )
-  },
-  {
     key: 'week',
     label: 'Week',
     tip: 'Week — the whole week as a timeline, for moving blocks around',
@@ -123,7 +116,7 @@ const NAV: { key: NavKey; label: string; tip: string; icon: ReactNode }[] = [
   {
     key: 'search',
     label: 'Search',
-    tip: 'Search — find any task, event or inbox item',
+    tip: 'Search — find any task by its title or notes',
     icon: (
       <>
         <circle cx="9" cy="9" r="5.2" />
@@ -664,6 +657,119 @@ const UpcomingList: React.FC<{
   )
 }
 
+/** Splits an already-sorted list into runs that share a key, such as one run per day. */
+const runsBy = (tasks: Task[], key: (task: Task) => string): { key: string; tasks: Task[] }[] => {
+  const runs: { key: string; tasks: Task[] }[] = []
+  for (const task of tasks) {
+    const last = runs[runs.length - 1]
+    if (last && last.key === key(task)) last.tasks.push(task)
+    else runs.push({ key: key(task), tasks: [task] })
+  }
+  return runs
+}
+
+/** Groups of task rows, each under a heading. */
+const TaskGroups: React.FC<{
+  groups: { key: string; heading: string; tasks: Task[] }[]
+  onToggle?: (id: string) => void
+  onOpen?: (id: string) => void
+  onDelete?: (id: string) => void
+}> = ({ groups, onToggle, onOpen, onDelete }) => (
+  <>
+    {groups.map((group, i) => (
+      <div key={group.key} style={{ marginTop: i === 0 ? 0 : 14 }}>
+        <div style={{ ...eyebrow, marginBottom: 8 }}>{group.heading}</div>
+        {group.tasks.map((task) => (
+          <TaskRow
+            key={task.id}
+            task={task}
+            onToggle={() => onToggle?.(task.id)}
+            onOpen={() => onOpen?.(task.id)}
+            onDelete={() => onDelete?.(task.id)}
+          />
+        ))}
+      </div>
+    ))}
+  </>
+)
+
+/** The Done tab: finished tasks grouped by the day they were ticked off. */
+const DoneList: React.FC<{
+  tasks: Task[]
+  today: Date
+  onToggle?: (id: string) => void
+  onOpen?: (id: string) => void
+  onDelete?: (id: string) => void
+}> = ({ tasks, today, onToggle, onOpen, onDelete }) => {
+  if (tasks.length === 0) {
+    return <EmptyNote hint="Tick a task off and it lands here.">Nothing finished yet.</EmptyNote>
+  }
+  const todayKey = localDay(today)
+  const yesterdayKey = localDay(addDays(today, -1))
+  const heading = (key: string): string =>
+    key === todayKey ? 'Today' : key === yesterdayKey ? 'Yesterday' : dayHeading(key, today)
+  const groups = runsBy(tasks, (task) => localDay(new Date(task.doneAt ?? 0))).map((run) => ({
+    ...run,
+    heading: heading(run.key)
+  }))
+  return <TaskGroups groups={groups} onToggle={onToggle} onOpen={onOpen} onDelete={onDelete} />
+}
+
+/** The search page: a box, and every matching task grouped by its day. */
+const SearchView: React.FC<{
+  query: string
+  onQuery: (query: string) => void
+  results: Task[]
+  today: Date
+  onToggle?: (id: string) => void
+  onOpen?: (id: string) => void
+  onDelete?: (id: string) => void
+}> = ({ query, onQuery, results, today, onToggle, onOpen, onDelete }) => {
+  const todayKey = localDay(today)
+  const heading = (key: string): string =>
+    key === '' ? 'No date' : key === todayKey ? 'Today' : dayHeading(key, today)
+  const groups = runsBy(results, (task) => task.day ?? '').map((run) => ({
+    ...run,
+    heading: heading(run.key)
+  }))
+  return (
+    <>
+      <input
+        autoFocus
+        value={query}
+        onChange={(e) => onQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') onQuery('')
+        }}
+        placeholder="Search tasks and notes..."
+        aria-label="Search tasks"
+        style={{
+          width: '100%',
+          boxSizing: 'border-box',
+          marginBottom: 18,
+          padding: '10px 14px',
+          border: `1px solid ${t.strokeControl}`,
+          borderRadius: 10,
+          outline: 'none',
+          background: t.control,
+          color: t.text1,
+          fontFamily: t.serif,
+          fontSize: 15
+        }}
+      />
+      {query.trim() === '' ? (
+        <EmptyNote hint="Searches titles and notes of every task, finished ones too.">
+          Type to search.
+        </EmptyNote>
+      ) : groups.length === 0 ? (
+        <EmptyNote>No tasks match “{query.trim()}”.</EmptyNote>
+      ) : (
+        <TaskGroups groups={groups} onToggle={onToggle} onOpen={onOpen} onDelete={onDelete} />
+      )}
+    </>
+  )
+}
+
 const TABS = ['Today', 'Inbox', 'Upcoming', 'Done'] as const
 
 export const TodayView: React.FC<TodayViewProps> = ({
@@ -671,6 +777,8 @@ export const TodayView: React.FC<TodayViewProps> = ({
   tasks,
   upcoming = [],
   week = [],
+  done: doneTasks = [],
+  onSearch,
   weekStart,
   onChangeWeek,
   counts,
@@ -693,6 +801,22 @@ export const TodayView: React.FC<TodayViewProps> = ({
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
+  // Search as you type. It runs again whenever the task lists reload, so ticks
+  // and edits made from the results show up straight away.
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<Task[]>([])
+  useEffect(() => {
+    if (activeNav !== 'search' || !onSearch) return
+    let stale = false // a newer search has started; ignore this one's answer
+    onSearch(query)
+      .then((found) => {
+        if (!stale) setResults(found)
+      })
+      .catch((err) => console.error('Search failed', err))
+    return () => {
+      stale = true
+    }
+  }, [activeNav, onSearch, query, tasks, upcoming, doneTasks])
   const formRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!adding) return
@@ -778,6 +902,10 @@ export const TodayView: React.FC<TodayViewProps> = ({
     setError(null)
   }
 
+  /** Finds a task in any list the app has loaded, including search results. */
+  const findAnyTask = (id: string): Task | undefined =>
+    [...tasks, ...upcoming, ...week, ...doneTasks, ...results].find((item) => item.id === id)
+
   /** Clicking a task row opens it in the form for editing */
   const onOpenTask = (id: string): void => {
     // Clicking the task that is already open closes the form again.
@@ -785,7 +913,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
       setAdding(false)
       return
     }
-    const task = [...tasks, ...upcoming, ...week].find((item) => item.id === id)
+    const task = findAnyTask(id)
     if (!task) return
     fillForm(task)
     setAdding(true)
@@ -793,7 +921,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
 
   /** Drag and drop: gives a task a new day and time, keeping its title and notes. */
   const moveTask = (id: string, to: { day?: string; start?: number; end?: number }): void => {
-    const task = [...tasks, ...upcoming, ...week].find((item) => item.id === id)
+    const task = findAnyTask(id)
     if (!task) return
     if (editingId === id) setAdding(false) // the open form would show the old time
     onUpdateTask?.(id, { title: task.title, notes: task.notes, ...to }).catch((err) =>
@@ -895,7 +1023,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
                 letterSpacing: '-.02em'
               }}
             >
-              {activeNav === 'week' ? 'Week' : 'Today'}
+              {activeNav === 'week' ? 'Week' : activeNav === 'search' ? 'Search' : 'Today'}
             </h1>
             {activeNav === 'week' && weekStart && (
               <WeekNav
@@ -1032,14 +1160,13 @@ export const TodayView: React.FC<TodayViewProps> = ({
 
         <div
           style={{
-            display: activeNav === 'week' ? 'none' : 'flex',
+            display: activeNav === 'today' ? 'flex' : 'none',
             gap: 26,
             padding: '16px 34px 0'
           }}
         >
           {TABS.map((tab) => {
             const on = tab === activeTab
-            const enabled = tab === 'Today' || tab === 'Upcoming'
             const count =
               tab === 'Today'
                 ? counts?.today
@@ -1051,13 +1178,13 @@ export const TodayView: React.FC<TodayViewProps> = ({
             return (
               <div
                 key={tab}
-                onClick={enabled ? () => setActiveTab(tab) : undefined}
+                onClick={() => setActiveTab(tab)}
                 style={{
                   paddingBottom: 12,
                   fontSize: 13,
-                  color: on ? t.text1 : enabled ? '#919191' : t.text6,
+                  color: on ? t.text1 : '#919191',
                   borderBottom: on ? `1.5px solid ${t.markerActive}` : undefined,
-                  cursor: enabled ? 'pointer' : 'default'
+                  cursor: 'pointer'
                 }}
               >
                 {tab}
@@ -1091,6 +1218,28 @@ export const TodayView: React.FC<TodayViewProps> = ({
               nowMinutes={nowMinutes}
               onOpen={onOpenTask}
               onMove={moveTask}
+            />
+          ) : activeNav === 'search' ? (
+            <SearchView
+              query={query}
+              onQuery={setQuery}
+              results={results}
+              today={date}
+              onToggle={onToggleTask}
+              onOpen={onOpenTask}
+              onDelete={onDeleteTask}
+            />
+          ) : activeTab === 'Inbox' ? (
+            <EmptyNote hint="New Canvas assignments and calendar invites will arrive here once those are connected.">
+              Nothing to sort.
+            </EmptyNote>
+          ) : activeTab === 'Done' ? (
+            <DoneList
+              tasks={doneTasks}
+              today={date}
+              onToggle={onToggleTask}
+              onOpen={onOpenTask}
+              onDelete={onDeleteTask}
             />
           ) : activeTab === 'Upcoming' ? (
             <UpcomingList
@@ -1204,7 +1353,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
           )}
         </div>
       </main>
-      {activeNav !== 'week' && (
+      {activeNav === 'today' && (
         <DayRail
           tasks={tasks}
           nowMinutes={nowMinutes}

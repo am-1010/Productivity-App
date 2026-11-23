@@ -15,6 +15,8 @@ export interface Task {
   start?: number
   end?: number
   done: boolean
+  /** When it was ticked off, in milliseconds (Date.now()). Undefined while open */
+  doneAt?: number
 }
 
 export interface NewTaskInput {

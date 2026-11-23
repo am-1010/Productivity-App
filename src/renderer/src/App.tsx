@@ -12,7 +12,8 @@ function App(): React.JSX.Element {
 
   const [tasks, setTasks] = useState<Task[]>([])
   const [upcoming, setUpcoming] = useState<Task[]>([])
-  const [view, setView] = useState<'today' | 'week'>('today')
+  const [done, setDone] = useState<Task[]>([])
+  const [view, setView] = useState<'today' | 'week' | 'search'>('today')
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
   const [week, setWeek] = useState<Task[]>([])
 
@@ -22,15 +23,22 @@ function App(): React.JSX.Element {
       window.api.getTasks(today),
       window.api.getUpcomingTasks(today),
       // Starts a day early so a block that runs past midnight into Monday is included.
-      window.api.getTasksForRange(localDay(addDays(weekStart, -1)), localDay(addDays(weekStart, 6)))
+      window.api.getTasksForRange(
+        localDay(addDays(weekStart, -1)),
+        localDay(addDays(weekStart, 6))
+      ),
+      window.api.getDoneTasks()
     ])
-      .then(([todayTasks, upcomingTasks, weekTasks]) => {
+      .then(([todayTasks, upcomingTasks, weekTasks, doneTasks]) => {
         setTasks(todayTasks)
         setUpcoming(upcomingTasks)
         setWeek(weekTasks)
+        setDone(doneTasks)
       })
       .catch((err) => console.error('Failed to load tasks', err))
   }, [weekStart])
+
+  const searchTasks = useCallback((query: string) => window.api.searchTasks(query), [])
 
   // Runs at startup, and again whenever the week view moves to another week.
   useEffect(() => {
@@ -51,11 +59,13 @@ function App(): React.JSX.Element {
       tasks={tasks}
       upcoming={upcoming}
       week={week}
+      done={done}
+      onSearch={searchTasks}
       weekStart={weekStart}
       onChangeWeek={setWeekStart}
       activeNav={view}
       onNavigate={(key) => {
-        if (key === 'today' || key === 'week') setView(key)
+        if (key === 'today' || key === 'week' || key === 'search') setView(key)
       }}
       counts={{
         today: tasks.filter((task) => !task.done).length,
