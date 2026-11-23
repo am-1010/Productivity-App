@@ -12,6 +12,7 @@ function App(): React.JSX.Element {
 
   const [tasks, setTasks] = useState<Task[]>([])
   const [upcoming, setUpcoming] = useState<Task[]>([])
+  const [overdue, setOverdue] = useState<Task[]>([])
   const [done, setDone] = useState<Task[]>([])
   const [view, setView] = useState<'today' | 'week' | 'search'>('today')
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
@@ -22,6 +23,7 @@ function App(): React.JSX.Element {
     return Promise.all([
       window.api.getTasks(today),
       window.api.getUpcomingTasks(today),
+      window.api.getOverdueTasks(today),
       // Starts a day early so a block that runs past midnight into Monday is included.
       window.api.getTasksForRange(
         localDay(addDays(weekStart, -1)),
@@ -29,9 +31,10 @@ function App(): React.JSX.Element {
       ),
       window.api.getDoneTasks()
     ])
-      .then(([todayTasks, upcomingTasks, weekTasks, doneTasks]) => {
+      .then(([todayTasks, upcomingTasks, overdueTasks, weekTasks, doneTasks]) => {
         setTasks(todayTasks)
         setUpcoming(upcomingTasks)
+        setOverdue(overdueTasks)
         setWeek(weekTasks)
         setDone(doneTasks)
       })
@@ -58,6 +61,7 @@ function App(): React.JSX.Element {
       date={new Date()}
       tasks={tasks}
       upcoming={upcoming}
+      overdue={overdue}
       week={week}
       done={done}
       onSearch={searchTasks}
@@ -69,6 +73,7 @@ function App(): React.JSX.Element {
       }}
       counts={{
         today: tasks.filter((task) => !task.done).length,
+        overdue: overdue.length,
         inbox: 0,
         upcoming: upcoming.filter((task) => !task.done).length
       }}

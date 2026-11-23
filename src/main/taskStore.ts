@@ -5,6 +5,7 @@ import type { NewTaskInput, Task, TaskSource } from '../shared/types'
 export interface TaskStore {
   getTasksForDay(day: string): Task[]
   getUpcomingTasks(day: string): Task[]
+  getOverdueTasks(day: string): Task[]
   getTasksForRange(from: string, to: string): Task[]
   searchTasks(query: string): Task[]
   getDoneTasks(): Task[]
@@ -101,6 +102,18 @@ export function openTaskStore(db: Database.Database): TaskStore {
           `SELECT * FROM task
                     WHERE day > ?
                     ORDER BY day, start_min IS NULL, start_min`
+        )
+        .all(day) as TaskRow[]
+      return rows.map(toTask)
+    },
+
+    // Unfinished tasks from days before `day`: the most recent day first, then by time.
+    getOverdueTasks(day: string): Task[] {
+      const rows = db
+        .prepare(
+          `SELECT * FROM task
+            WHERE day < ? AND done_at IS NULL
+            ORDER BY day DESC, start_min IS NULL, start_min`
         )
         .all(day) as TaskRow[]
       return rows.map(toTask)

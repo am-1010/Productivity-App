@@ -85,6 +85,27 @@ describe('getUpcomingTasks', () => {
   })
 })
 
+describe('getOverdueTasks', () => {
+  it('returns unfinished tasks from earlier days, the most recent day first', () => {
+    store.addTask({ title: 'Today', day: '2026-11-13' })
+    store.addTask({ title: 'Undated' })
+    store.addTask({ title: 'Tomorrow', day: '2026-11-14' })
+    store.addTask({ title: 'Last week', day: '2026-11-06' })
+    store.addTask({ title: 'Yesterday late', day: '2026-11-12', start: 900, end: 960 })
+    store.addTask({ title: 'Yesterday untimed', day: '2026-11-12' })
+    store.addTask({ title: 'Yesterday early', day: '2026-11-12', start: 540, end: 600 })
+    store.addTask({ title: 'Finished', day: '2026-11-11' })
+    store.toggleTask(store.searchTasks('Finished')[0].id)
+
+    expect(store.getOverdueTasks('2026-11-13').map((t) => t.title)).toEqual([
+      'Yesterday early',
+      'Yesterday late',
+      'Yesterday untimed',
+      'Last week'
+    ])
+  })
+})
+
 describe('toggleTask', () => {
   it('marks a task done, then not done again', () => {
     store.addTask({ title: 'Flip me', day: '2026-11-13' })

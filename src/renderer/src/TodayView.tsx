@@ -51,6 +51,7 @@ export interface TodayViewProps {
   date: Date
   tasks: Task[]
   upcoming?: Task[]
+  overdue?: Task[]
   /** Tasks for the week view: the shown week plus the day before it. */
   week?: Task[]
   /** Finished tasks for the Done tab, most recently finished first. */
@@ -61,7 +62,7 @@ export interface TodayViewProps {
   weekStart?: Date
   onChangeWeek?: (start: Date) => void
   /** Counts for the tab strip; supplied by the caller so this view stays dumb. */
-  counts?: { today: number; inbox: number; upcoming?: number }
+  counts?: { today: number; overdue?: number; inbox: number; upcoming?: number }
   activeNav?: NavKey
   /** Minutes from midnight. Pass a ticking value to animate the now-line. */
   nowMinutes: number
@@ -304,9 +305,16 @@ const TaskRow: React.FC<{
   dragging?: boolean
   /** Makes the row draggable. A click without moving still opens it. */
   onPointerDown?: (event: React.PointerEvent<HTMLElement>) => void
-}> = ({ task, now, onToggle, onOpen, onDelete, dragging, onPointerDown }) => {
+  /** Shows the tasks's day before its time, such as "Yesterday". */
+  dayLabel?: string
+}> = ({ task, now, onToggle, onOpen, onDelete, dragging, onPointerDown, dayLabel }) => {
+  const time = isBlocked(task)
+    ? fmtRange(task.start, task.end)
+    : task.start != null
+      ? fmt(task.start)
+      : null
   const meta = [
-    isBlocked(task) ? fmtRange(task.start, task.end) : task.start != null ? fmt(task.start) : null,
+    [dayLabel, time].filter(Boolean).join(', ') || null,
     task.project ?? (task.source ? `from ${task.source}` : null)
   ].filter(Boolean) as string[]
 
@@ -674,7 +682,11 @@ const TaskGroups: React.FC<{
   onToggle?: (id: string) => void
   onOpen?: (id: string) => void
   onDelete?: (id: string) => void
-}> = ({ groups, onToggle, onOpen, onDelete }) => (
+  /** The task being dragged, faded in place */
+  draggingId?: string
+  /** Makes the rows draggable. */
+  onRowPointerDown?: (id: string, event: React.PointerEvent<HTMLElement>) => void
+}> = ({ groups, onToggle, onOpen, onDelete, draggingId, onRowPointerDown }) => (
   <>
     {groups.map((group, i) => (
       <div key={group.key} style={{ marginTop: i === 0 ? 0 : 14 }}>
@@ -686,6 +698,8 @@ const TaskGroups: React.FC<{
             onToggle={() => onToggle?.(task.id)}
             onOpen={() => onOpen?.(task.id)}
             onDelete={() => onDelete?.(task.id)}
+            dragging={draggingId === task.id}
+            onPointerDown={onRowPointerDown && ((e) => onRowPointerDown(task.id, e))}
           />
         ))}
       </div>
@@ -770,12 +784,60 @@ const SearchView: React.FC<{
   )
 }
 
-const TABS = ['Today', 'Inbox', 'Upcoming', 'Done'] as const
+/** "Yesterday" for yesterday, otherwise a short date such as "Tue, Nov 10". */
+const pastDayLabel = (day: string, today: Date): string => {
+  if (day === localDay(addDays(today, -1))) return 'Yesterday'
+  const [y, m, d] = day.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    ...(y !== today.getFullYear() ? { year: 'numeric' } : {})
+  })
+}
+
+/** The Overdue tab: unfinished tasks from earlier days, grouped by their day */
+const OverdueList: React.FC<{
+  tasks: Task[]
+  today: Date
+  onToggle?: (id: string) => void
+  onOpen?: (id: string) => void
+  onDelete?: (id: string) => void
+  draggingId?: string
+  onRowPointerDown?: (id: string, event: React.PointerEvent<HTMLElement>) => void
+}> = ({ tasks, today, onToggle, onOpen, onDelete, draggingId, onRowPointerDown }) => {
+  if (tasks.length === 0) {
+    return (
+      <EmptyNote hint="Unfinished tasks from past days show up here.">Nothing overdue.</EmptyNote>
+    )
+  }
+  const yesterdayKey = localDay(addDays(today, -1))
+  const groups = runsBy(tasks, (task) => task.day ?? '').map((run) => ({
+    ...run,
+    heading: run.key === yesterdayKey ? 'Yesterday' : dayHeading(run.key, today)
+  }))
+  return (
+    <TaskGroups
+      groups={groups}
+      onToggle={onToggle}
+      onOpen={onOpen}
+      onDelete={onDelete}
+      draggingId={draggingId}
+      onRowPointerDown={onRowPointerDown}
+    />
+  )
+}
+
+/** How many overdue tasks the Today tab shows before pointing to the Overdue tab. */
+const OVERDUE_PREVIEW = 3
+
+const TABS = ['Today', 'Overdue', 'Inbox', 'Upcoming', 'Done'] as const
 
 export const TodayView: React.FC<TodayViewProps> = ({
   date,
   tasks,
   upcoming = [],
+  overdue = [],
   week = [],
   done: doneTasks = [],
   onSearch,
@@ -904,7 +966,9 @@ export const TodayView: React.FC<TodayViewProps> = ({
 
   /** Finds a task in any list the app has loaded, including search results. */
   const findAnyTask = (id: string): Task | undefined =>
-    [...tasks, ...upcoming, ...week, ...doneTasks, ...results].find((item) => item.id === id)
+    [...tasks, ...overdue, ...upcoming, ...week, ...doneTasks, ...results].find(
+      (item) => item.id === id
+    )
 
   /** Clicking a task row opens it in the form for editing */
   const onOpenTask = (id: string): void => {
@@ -937,8 +1001,12 @@ export const TodayView: React.FC<TodayViewProps> = ({
   const dragFrom = useRef<'list' | 'rail'>('list')
   const [todayTarget, setTodayTarget] = useState<TodayDrop | null>(null)
 
+  /** The tasks that can be dragged on the Today page: today's and the overdue ones. */
+  const findTodayTask = (id: string): Task | undefined =>
+    tasks.find((item) => item.id === id) ?? overdue.find((item) => item.id === id)
+
   const todayDropTarget = (d: BlockDrag): TodayDrop | null => {
-    const task = tasks.find((item) => item.id === d.id)
+    const task = findTodayTask(d.id)
     if (!task) return null
     const grid = railGridRef.current?.getBoundingClientRect()
     if (grid && d.x >= grid.left && d.x <= grid.right) {
@@ -964,18 +1032,21 @@ export const TodayView: React.FC<TodayViewProps> = ({
     onDragMove: (d) => setTodayTarget(todayDropTarget(d)),
     onDrop: (d) => {
       const to = todayDropTarget(d)
-      const task = tasks.find((item) => item.id === d.id)
+      const task = findTodayTask(d.id)
       if (!to || !task) return
+      const today = localDay(date)
+      // An overdue task dropped anywhere on Today moves to today.
+      const day = task.day ? today : undefined
       if (to.kind === 'unscheduled') {
-        if (task.start != null) moveTask(task.id, { day: task.day })
-      } else if (to.start !== task.start || !task.day) {
-        moveTask(task.id, { day: task.day ?? localDay(date), start: to.start, end: to.end })
+        if (task.start != null || task.day !== day) moveTask(task.id, { day })
+      } else if (to.start !== task.start || task.day !== today) {
+        moveTask(task.id, { day: today, start: to.start, end: to.end })
       }
     }
   })
   // Only show drop feedback while a drag is in progress.
   const todayDrop = drag ? todayTarget : null
-  const dragged = drag ? tasks.find((task) => task.id === drag.id) : undefined
+  const dragged = drag ? findTodayTask(drag.id) : undefined
   const dragTask = (
     from: 'list' | 'rail',
     id: string,
@@ -1170,11 +1241,13 @@ export const TodayView: React.FC<TodayViewProps> = ({
             const count =
               tab === 'Today'
                 ? counts?.today
-                : tab === 'Inbox'
-                  ? counts?.inbox
-                  : tab === 'Upcoming'
-                    ? counts?.upcoming
-                    : undefined
+                : tab === 'Overdue'
+                  ? counts?.overdue
+                  : tab === 'Inbox'
+                    ? counts?.inbox
+                    : tab === 'Upcoming'
+                      ? counts?.upcoming
+                      : undefined
             return (
               <div
                 key={tab}
@@ -1229,6 +1302,16 @@ export const TodayView: React.FC<TodayViewProps> = ({
               onOpen={onOpenTask}
               onDelete={onDeleteTask}
             />
+          ) : activeTab === 'Overdue' ? (
+            <OverdueList
+              tasks={overdue}
+              today={date}
+              onToggle={onToggleTask}
+              onOpen={onOpenTask}
+              onDelete={onDeleteTask}
+              draggingId={drag?.id}
+              onRowPointerDown={(id, e) => dragTask('list', id, e)}
+            />
           ) : activeTab === 'Inbox' ? (
             <EmptyNote hint="New Canvas assignments and calendar invites will arrive here once those are connected.">
               Nothing to sort.
@@ -1251,6 +1334,53 @@ export const TodayView: React.FC<TodayViewProps> = ({
             />
           ) : (
             <>
+              {overdue.length > 0 && (
+                <>
+                  <div
+                    style={{
+                      ...eyebrow,
+                      display: 'flex',
+                      alignItems: 'baseline',
+                      justifyContent: 'space-between',
+                      marginBottom: 8
+                    }}
+                  >
+                    <span>Overdue</span>
+                    <span style={{ color: t.text6 }}>Drag to today</span>
+                  </div>
+                  {overdue.slice(0, OVERDUE_PREVIEW).map((task) => (
+                    <TaskRow
+                      key={task.id}
+                      task={task}
+                      dayLabel={task.day && pastDayLabel(task.day, date)}
+                      onToggle={() => onToggleTask?.(task.id)}
+                      onOpen={() => onOpenTask?.(task.id)}
+                      onDelete={() => onDeleteTask?.(task.id)}
+                      dragging={drag?.id === task.id}
+                      onPointerDown={(e) => dragTask('list', task.id, e)}
+                    />
+                  ))}
+                  {overdue.length > OVERDUE_PREVIEW && (
+                    <button
+                      onClick={() => setActiveTab('Overdue')}
+                      style={{
+                        alignSelf: 'flex-start',
+                        margin: '2px 0 0 14px',
+                        padding: 0,
+                        border: 'none',
+                        background: 'none',
+                        color: t.text4,
+                        fontFamily: t.serif,
+                        fontSize: 13,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      See all {overdue.length} in Overdue →
+                    </button>
+                  )}
+                  <div style={{ height: 14 }} />
+                </>
+              )}
               {current && (
                 <>
                   <div style={{ ...eyebrow, marginBottom: 12 }}>Now</div>

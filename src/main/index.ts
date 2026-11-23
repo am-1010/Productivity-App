@@ -5,6 +5,7 @@ import icon from '../../resources/icon.png?asset'
 import {
   getTasksForDay,
   getUpcomingTasks,
+  getOverdueTasks,
   getTasksForRange,
   searchTasks,
   getDoneTasks,
@@ -68,6 +69,7 @@ app.whenReady().then(() => {
   ipcMain.handle('app:ping', () => 'pong from main')
   ipcMain.handle('tasks:get', (_event, day: string) => getTasksForDay(day))
   ipcMain.handle('tasks:upcoming', (_event, day: string) => getUpcomingTasks(day))
+  ipcMain.handle('tasks:overdue', (_event, day: string) => getOverdueTasks(day))
   ipcMain.handle('tasks:add', (_event, input: NewTaskInput) => addTask(input))
   ipcMain.handle('tasks:range', (_event, from: string, to: string) => getTasksForRange(from, to))
   ipcMain.handle('tasks:update', (_event, id: string, input: NewTaskInput) => updateTask(id, input))

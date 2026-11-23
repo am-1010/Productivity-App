@@ -9,6 +9,7 @@ db.pragma('journal_mode = WAL')
 export const {
   getTasksForDay,
   getUpcomingTasks,
+  getOverdueTasks,
   getTasksForRange,
   searchTasks,
   getDoneTasks,

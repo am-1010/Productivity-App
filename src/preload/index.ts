@@ -7,6 +7,7 @@ const api = {
   ping: () => ipcRenderer.invoke('app:ping'),
   getTasks: (day: string) => ipcRenderer.invoke('tasks:get', day),
   getUpcomingTasks: (day: string) => ipcRenderer.invoke('tasks:upcoming', day),
+  getOverdueTasks: (day: string) => ipcRenderer.invoke('tasks:overdue', day),
   addTask: (input: NewTaskInput) => ipcRenderer.invoke('tasks:add', input),
   getTasksForRange: (from: string, to: string) => ipcRenderer.invoke('tasks:range', from, to),
   searchTasks: (query: string) => ipcRenderer.invoke('tasks:search', query),
