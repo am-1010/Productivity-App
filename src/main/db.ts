@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
+import { openEventStore } from './eventStore'
 import { openTaskStore } from './taskStore'
 
 const db: Database.Database = new Database(join(app.getPath('userData'), 'tasks.db'))
@@ -18,5 +19,8 @@ export const {
   toggleTask,
   deleteTask
 } = openTaskStore(db)
+
+// Connected calendars. Opened after the task store, which makes their tables.
+export const eventStore = openEventStore(db)
 
 export default db

@@ -29,12 +29,18 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { NewTaskInput, Task } from '../../shared/types'
+import type { CalendarEvent, Connection, NewTaskInput, Task } from '../../shared/types'
+import { ConnectionsView } from './ConnectionsView'
 import { addDays, dayHeading, localDay } from './day'
-import { dropHighlight, eyebrow, t } from './theme'
+import { AllDayChip, EventBlock } from './EventBlock'
+import { dropHighlight, eyebrow, laneBox, t } from './theme'
 import { WeekNav, WeekView } from './WeekView'
 import {
   blockedMinutes,
+  blocksForDay,
+  layoutLanes,
+  type DayBlock,
+  type Lane,
   fmt,
   fmtRange,
   isBlocked,
@@ -54,6 +60,15 @@ export interface TodayViewProps {
   overdue?: Task[]
   /** Tasks for the week view: the shown week plus the day before it. */
   week?: Task[]
+  /** Calendar events for today and yesterday (a late one can run into today). */
+  events?: CalendarEvent[]
+  /** Calendar events for the week view, over the same days as `week`. */
+  weekEvents?: CalendarEvent[]
+  /** Connected calendars, for the Connections page. */
+  connections?: Connection[]
+  onRemoveConnection?: (id: string) => void
+  /** Adds made-up events to try things out. Only passed while developing. */
+  onAddSampleCalendar?: () => void
   /** Finished tasks for the Done tab, most recently finished first. */
   done?: Task[]
   /** Looks up tasks for the Search page. */
@@ -204,7 +219,7 @@ const IconRail: React.FC<{ active: NavKey; onNavigate?: (k: NavKey) => void }> =
       )
     })}
     <button
-      title="Account — profile, connected sources and scheduling settings"
+      title="Connections - link Google Calendar, Apple Calendar and Canvas"
       aria-label="Account"
       onClick={() => onNavigate?.('account')}
       style={{
@@ -215,6 +230,8 @@ const IconRail: React.FC<{ active: NavKey; onNavigate?: (k: NavKey) => void }> =
         padding: 0,
         borderRadius: '50%',
         background: '#222222',
+        boxShadow:
+          active === 'account' ? `0 0 0 2px ${t.shell}, 0 0 0 3px ${t.textMax}` : undefined,
         cursor: 'pointer'
       }}
     />
@@ -430,8 +447,10 @@ const TimeBlock: React.FC<{
   dragging?: boolean
   /** Drawn as the drop preview: highlighted, and ignores the mouse. */
   preview?: boolean
+  /** Its column when it overlaps an event or another task. Full width if left out. */
+  lane?: Lane
   onPointerDown?: (event: React.PointerEvent<HTMLElement>) => void
-}> = ({ task, startHour, current, dragging, preview, onPointerDown }) => {
+}> = ({ task, startHour, current, dragging, preview, lane, onPointerDown }) => {
   if (!isBlocked(task)) return null
   const duration = task.end - task.start
   const top = ((task.start - startHour * 60) / 60) * HOUR_PX
@@ -444,8 +463,7 @@ const TimeBlock: React.FC<{
       onPointerDown={onPointerDown}
       style={{
         position: 'absolute',
-        left: 46,
-        right: 0,
+        ...laneBox(lane, 46, 0),
         top,
         height,
         borderRadius: 8,
@@ -500,9 +518,28 @@ const DayRail: React.FC<{
   /** Where the dragged task would land, drawn as a highlighted block. */
   preview?: Task
   onBlockPointerDown?: (id: string, event: React.PointerEvent<HTMLElement>) => void
-}> = ({ tasks, nowMinutes, floor, end, gridRef, draggingId, preview, onBlockPointerDown }) => {
+  /** Today's timed calendar events. */
+  eventBlocks?: DayBlock<CalendarEvent>[]
+  /** Today's all-day calendar events, shown above the hours. */
+  allDay?: CalendarEvent[]
+}> = ({
+  tasks,
+  nowMinutes,
+  floor,
+  end,
+  gridRef,
+  draggingId,
+  preview,
+  onBlockPointerDown,
+  eventBlocks = [],
+  allDay = []
+}) => {
   const { startHour, endHour } = useMemo(() => railRange(tasks, floor, end), [tasks, floor, end])
   const hasBlocks = tasks.some(isBlocked)
+  const lanes = layoutLanes([
+    ...tasks.filter(isBlocked).map((task) => ({ id: task.id, start: task.start, end: task.end })),
+    ...eventBlocks.map((b) => ({ id: b.task.id, start: b.start, end: b.end }))
+  ])
   const hours = endHour - startHour
   const nowTop = ((nowMinutes - startHour * 60) / 60) * HOUR_PX
   const nowVisible = nowTop >= 0 && nowTop <= hours * HOUR_PX
@@ -532,6 +569,22 @@ const DayRail: React.FC<{
           {hasBlocks ? `${fmtDuration(blockedMinutes(tasks))} blocked` : 'Nothing Blocked'}
         </div>
       </div>
+
+      {allDay.length > 0 && (
+        <div
+          style={{
+            marginTop: 14,
+            marginLeft: 46,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6
+          }}
+        >
+          {allDay.map((event) => (
+            <AllDayChip key={event.id} event={event} />
+          ))}
+        </div>
+      )}
 
       <div
         ref={gridRef}
@@ -565,7 +618,7 @@ const DayRail: React.FC<{
           }}
         />
 
-        {!hasBlocks && (
+        {!hasBlocks && eventBlocks.length === 0 && (
           <div
             style={{
               position: 'absolute',
@@ -584,12 +637,27 @@ const DayRail: React.FC<{
           </div>
         )}
 
+        {eventBlocks.map((block) => (
+          <EventBlock
+            key={block.task.id}
+            event={block.task}
+            start={block.start}
+            end={block.end}
+            box={{
+              ...laneBox(lanes.get(block.task.id), 46, 0),
+              top: ((block.start - startHour * 60) / 60) * HOUR_PX,
+              height: ((block.end - block.start) / 60) * HOUR_PX
+            }}
+          />
+        ))}
+
         {tasks.filter(isBlocked).map((task) => (
           <TimeBlock
             key={task.id}
             task={task}
             startHour={startHour}
             current={nowMinutes >= task.start && nowMinutes < task.end}
+            lane={lanes.get(task.id)}
             dragging={draggingId === task.id}
             onPointerDown={(e) => onBlockPointerDown?.(task.id, e)}
           />
@@ -839,6 +907,11 @@ export const TodayView: React.FC<TodayViewProps> = ({
   upcoming = [],
   overdue = [],
   week = [],
+  events = [],
+  weekEvents = [],
+  connections = [],
+  onRemoveConnection,
+  onAddSampleCalendar,
   done: doneTasks = [],
   onSearch,
   weekStart,
@@ -1094,7 +1167,13 @@ export const TodayView: React.FC<TodayViewProps> = ({
                 letterSpacing: '-.02em'
               }}
             >
-              {activeNav === 'week' ? 'Week' : activeNav === 'search' ? 'Search' : 'Today'}
+              {activeNav === 'week'
+                ? 'Week'
+                : activeNav === 'search'
+                  ? 'Search'
+                  : activeNav === 'account'
+                    ? 'Connections'
+                    : 'Today'}
             </h1>
             {activeNav === 'week' && weekStart && (
               <WeekNav
@@ -1288,9 +1367,16 @@ export const TodayView: React.FC<TodayViewProps> = ({
               today={date}
               tasks={week}
               undated={tasks.filter((task) => !task.day && !task.done)}
+              events={weekEvents}
               nowMinutes={nowMinutes}
               onOpen={onOpenTask}
               onMove={moveTask}
+            />
+          ) : activeNav === 'account' ? (
+            <ConnectionsView
+              connections={connections}
+              onRemove={onRemoveConnection}
+              onAddSample={onAddSampleCalendar}
             />
           ) : activeNav === 'search' ? (
             <SearchView
@@ -1497,6 +1583,8 @@ export const TodayView: React.FC<TodayViewProps> = ({
               : undefined
           }
           onBlockPointerDown={(id, e) => dragTask('rail', id, e)}
+          eventBlocks={blocksForDay(events, localDay(date), localDay(addDays(date, -1)))}
+          allDay={events.filter((event) => event.day === localDay(date) && event.start == null)}
         />
       )}
 

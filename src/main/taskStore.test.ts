@@ -152,7 +152,7 @@ describe('migrations', () => {
 
     const oldStore = openTaskStore(old)
 
-    expect(old.pragma('user_version', { simple: true })).toBe(2)
+    expect(old.pragma('user_version', { simple: true })).toBe(3)
     expect(oldStore.getTasksForDay('2026-11-13')).toEqual([
       expect.objectContaining({ title: 'Old task', notes: undefined })
     ])

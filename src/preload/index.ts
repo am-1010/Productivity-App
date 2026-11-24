@@ -14,7 +14,11 @@ const api = {
   getDoneTasks: () => ipcRenderer.invoke('tasks:done'),
   updateTask: (id: string, input: NewTaskInput) => ipcRenderer.invoke('tasks:update', id, input),
   toggleTask: (id: string) => ipcRenderer.invoke('tasks:toggle', id),
-  deleteTask: (id: string) => ipcRenderer.invoke('tasks:delete', id)
+  deleteTask: (id: string) => ipcRenderer.invoke('tasks:delete', id),
+  getEventsForRange: (from: string, to: string) => ipcRenderer.invoke('events:range', from, to),
+  listConnections: () => ipcRenderer.invoke('connections:list'),
+  removeConnection: (id: string) => ipcRenderer.invoke('connections:remove', id),
+  addSampleCalendar: () => ipcRenderer.invoke('connections:sample')
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

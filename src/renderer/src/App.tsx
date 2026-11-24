@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import TodayView from './TodayView'
 import { addDays, localDay, startOfWeek } from './day'
-import type { Task } from '../../shared/types'
+import type { CalendarEvent, Connection, Task } from '../../shared/types'
 
 function App(): React.JSX.Element {
   // The current time, so the "now" line on the timeline stays live.
@@ -14,9 +14,12 @@ function App(): React.JSX.Element {
   const [upcoming, setUpcoming] = useState<Task[]>([])
   const [overdue, setOverdue] = useState<Task[]>([])
   const [done, setDone] = useState<Task[]>([])
-  const [view, setView] = useState<'today' | 'week' | 'search'>('today')
+  const [view, setView] = useState<'today' | 'week' | 'search' | 'account'>('today')
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
   const [week, setWeek] = useState<Task[]>([])
+  const [todayEvents, setTodayEvents] = useState<CalendarEvent[]>([])
+  const [weekEvents, setWeekEvents] = useState<CalendarEvent[]>([])
+  const [connections, setConnections] = useState<Connection[]>([])
 
   const load = useCallback((): Promise<void> => {
     const today = localDay(new Date())
@@ -41,12 +44,37 @@ function App(): React.JSX.Element {
       .catch((err) => console.error('Failed to load tasks', err))
   }, [weekStart])
 
+  // Calendar events and connections. Loaded apart from tasks, so a calendar
+  // problem never stops the task list from loading.
+  const loadCalendars = useCallback((): Promise<void> => {
+    const today = new Date()
+    return Promise.all([
+      // From yesterday, so a late event running past midnight shows on today.
+      window.api.getEventsForRange(localDay(addDays(today, -1)), localDay(today)),
+      window.api.getEventsForRange(
+        localDay(addDays(weekStart, -1)),
+        localDay(addDays(weekStart, 6))
+      ),
+      window.api.listConnections()
+    ])
+      .then(([todayList, weekList, connectionList]) => {
+        setTodayEvents(todayList)
+        setWeekEvents(weekList)
+        setConnections(connectionList)
+      })
+      .catch((err) => console.error('Failed to load calendars', err))
+  }, [weekStart])
+
   const searchTasks = useCallback((query: string) => window.api.searchTasks(query), [])
 
   // Runs at startup, and again whenever the week view moves to another week.
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    void loadCalendars()
+  }, [loadCalendars])
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -63,13 +91,32 @@ function App(): React.JSX.Element {
       upcoming={upcoming}
       overdue={overdue}
       week={week}
+      events={todayEvents}
+      weekEvents={weekEvents}
+      connections={connections}
+      onRemoveConnection={(id) =>
+        window.api
+          .removeConnection(id)
+          .then(loadCalendars)
+          .catch((err) => console.error('Failed to remove connection', err))
+      }
+      onAddSampleCalendar={
+        // The Sample calendar only exists while developing (npm run dev).
+        import.meta.env.DEV
+          ? () =>
+              window.api
+                .addSampleCalendar()
+                .then(loadCalendars)
+                .catch((err) => console.error('Failed to add sample calendar', err))
+          : undefined
+      }
       done={done}
       onSearch={searchTasks}
       weekStart={weekStart}
       onChangeWeek={setWeekStart}
       activeNav={view}
       onNavigate={(key) => {
-        if (key === 'today' || key === 'week' || key === 'search') setView(key)
+        setView(key)
       }}
       counts={{
         today: tasks.filter((task) => !task.done).length,

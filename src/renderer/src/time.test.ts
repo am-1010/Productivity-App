@@ -6,6 +6,7 @@ import {
   fmt,
   fmtDuration,
   fmtRange,
+  layoutLanes,
   moveBlock,
   railRange,
   toMinutes
@@ -135,5 +136,44 @@ describe('moveBlock', () => {
 
   it('does not start later than 23:45, but may end past midnight', () => {
     expect(moveBlock(1320, 1380, 500)).toEqual({ start: 1425, end: 1485 })
+  })
+})
+
+describe('layoutLanes', () => {
+  const lanes = (blocks: { id: string; start: number; end: number }[]): Record<string, string> =>
+    Object.fromEntries([...layoutLanes(blocks)].map(([id, l]) => [id, `${l.lane}/${l.lanes}`]))
+
+  it('gives a block on its own the full width', () => {
+    expect(lanes([{ id: 'a', start: 540, end: 600 }])).toEqual({ a: '0/1' })
+  })
+
+  it('puts overlapping blocks side by side, and back-to-back ones full width', () => {
+    expect(
+      lanes([
+        { id: 'a', start: 540, end: 600 },
+        { id: 'b', start: 570, end: 630 },
+        { id: 'c', start: 630, end: 660 }
+      ])
+    ).toEqual({ a: '0/2', b: '1/2', c: '0/1' })
+  })
+
+  it('reuses a column once it frees up, so a chain of overlaps stays narrow', () => {
+    expect(
+      lanes([
+        { id: 'long', start: 540, end: 720 },
+        { id: 'first', start: 540, end: 600 },
+        { id: 'second', start: 600, end: 660 }
+      ])
+    ).toEqual({ long: '0/2', first: '1/2', second: '1/2' })
+  })
+})
+
+describe('blocksForDay with calendar events', () => {
+  it('draws events the same way as tasks, skipping all-day ones', () => {
+    const events = [
+      { id: 'e1', title: 'Lecture', day: '2026-11-23', start: 600, end: 680 },
+      { id: 'e2', title: 'Trip', day: '2026-11-23' }
+    ]
+    expect(blocksForDay(events, '2026-11-23', '2026-11-22').map((b) => b.task.id)).toEqual(['e1'])
   })
 })

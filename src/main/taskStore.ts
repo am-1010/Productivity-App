@@ -74,7 +74,39 @@ export function openTaskStore(db: Database.Database): TaskStore {
     // v2: notes. Databases made by the previous code may already have it.
     () => {
       if (!hasColumn('task', 'notes')) db.exec('ALTER TABLE task ADD COLUMN notes TEXT')
-    }
+    },
+    // v3: connected calendars (Google, Apple, Canvas) and their events. The queries
+    // for these live in eventStore.ts
+    () =>
+      db.exec(`
+        CREATE TABLE connection(
+          id TEXT PRIMARY KEY,
+          provider TEXT NOT NULL,
+          name TEXT NOT NULL,
+          secret BLOB,
+          settings TEXT,
+          last_synced_at INTEGER,
+          last_error TEXT,
+          created_at INTEGER NOT NULL
+        );
+        CREATE TABLE event (
+          id TEXT PRIMARY KEY,
+          connection_id TEXT NOT NULL,
+          calendar_id TEXT NOT NULL,
+          external_id TEXT NOT NULL,
+          etag TEXT,
+          title TEXT NOT NULL,
+          location TEXT,
+          notes TEXT,
+          start_ms INTEGER,
+          end_ms INTEGER,
+          start_day TEXT,
+          end_day TEXT,
+          UNIQUE (connection_id, calendar_id, external_id)
+        );
+        CREATE INDEX event_start_ms ON event(start_ms);
+        CREATE INDEX event_start_day ON event(start_day);
+      `)
   ]
 
   const version = db.pragma('user_version', { simple: true }) as number

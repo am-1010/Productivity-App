@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, FC } from 'react'
-import type { Task } from '../../shared/types'
+import type { CalendarEvent, Task } from '../../shared/types'
 import { addDays, localDay, startOfWeek } from './day'
-import { dropHighlight, eyebrow, t } from './theme'
-import { blocksForDay, fmt, fmtRange, isBlocked, moveBlock } from './time'
+import { AllDayChip, EventBlock } from './EventBlock'
+import { dropHighlight, eyebrow, laneBox, t } from './theme'
+import { blocksForDay, fmt, fmtRange, isBlocked, layoutLanes, moveBlock } from './time'
 import { useBlockDrag, type BlockDrag } from './useBlockDrag'
 
 const HOUR_PX = 44
@@ -80,21 +81,32 @@ export const WeekView: FC<{
   tasks: Task[]
   /** Open tasks with no date, shown in the tray at the bottom. */
   undated: Task[]
+  /** Calendar events for the week, plus the day before it, like `tasks`. */
+  events?: CalendarEvent[]
   nowMinutes: number
   onOpen?: (id: string) => void
   /** Called when a task is dragged somewhere new. A missing day or time clears it. */
   onMove?: (id: string, to: { day?: string; start?: number; end?: number }) => void
-}> = ({ weekStart, today, tasks, undated, nowMinutes, onOpen, onMove }) => {
+}> = ({ weekStart, today, tasks, undated, events = [], nowMinutes, onOpen, onMove }) => {
   const todayKey = localDay(today)
   const columns = Array.from({ length: 7 }, (_, i) => {
     const date = addDays(weekStart, i)
     const key = localDay(date)
+    const prevKey = localDay(addDays(date, -1))
+    const blocks = blocksForDay(tasks, key, prevKey)
+    const eventBlocks = blocksForDay(events, key, prevKey)
     return {
       date,
       key,
       isToday: key === todayKey,
-      blocks: blocksForDay(tasks, key, localDay(addDays(date, -1))),
-      untimed: tasks.filter((task) => task.day === key && !isBlocked(task))
+      blocks,
+      eventBlocks,
+      // Tasks and events that overlap sit side by side.
+      lanes: layoutLanes(
+        [...blocks, ...eventBlocks].map((b) => ({ id: b.task.id, start: b.start, end: b.end }))
+      ),
+      untimed: tasks.filter((task) => task.day === key && !isBlocked(task)),
+      allDay: events.filter((event) => event.day === key && event.start == null)
     }
   })
 
@@ -212,6 +224,11 @@ export const WeekView: FC<{
               >
                 {column.date.getDate()}
               </div>
+              {column.allDay.map((event) => (
+                <div key={event.id} style={{ marginTop: 6 }}>
+                  <AllDayChip event={event} />
+                </div>
+              ))}
               {column.untimed.map((task) => (
                 <div
                   data-task
@@ -272,6 +289,19 @@ export const WeekView: FC<{
                 backgroundSize: `100% ${HOUR_PX}px`
               }}
             >
+              {column.eventBlocks.map((block) => (
+                <EventBlock
+                  key={block.task.id}
+                  event={block.task}
+                  start={block.start}
+                  end={block.end}
+                  box={{
+                    ...laneBox(column.lanes.get(block.task.id), 3, 3),
+                    top: ((block.start - startHour * 60) / 60) * HOUR_PX,
+                    height: Math.max(((block.end - block.start) / 60) * HOUR_PX, 16)
+                  }}
+                />
+              ))}
               {column.blocks.map((block) => {
                 const top = ((block.start - startHour * 60) / 60) * HOUR_PX
                 const blockHeight = Math.max(((block.end - block.start) / 60) * HOUR_PX, 16)
@@ -289,8 +319,7 @@ export const WeekView: FC<{
                     title={`${block.task.title} · ${fmtRange(block.task.start, block.task.end)}`}
                     style={{
                       position: 'absolute',
-                      left: 3,
-                      right: 3,
+                      ...laneBox(column.lanes.get(block.task.id), 3, 3),
                       top,
                       height: blockHeight,
                       boxSizing: 'border-box',

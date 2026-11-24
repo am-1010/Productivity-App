@@ -12,8 +12,10 @@ import {
   addTask,
   updateTask,
   toggleTask,
-  deleteTask
+  deleteTask,
+  eventStore
 } from './db'
+import { addSampleCalendar } from './sampleCalendar'
 import type { NewTaskInput } from '../shared/types'
 
 function createWindow(): void {
@@ -77,6 +79,13 @@ app.whenReady().then(() => {
   ipcMain.handle('tasks:done', () => getDoneTasks())
   ipcMain.handle('tasks:toggle', (_event, id: string) => toggleTask(id))
   ipcMain.handle('tasks:delete', (_event, id: string) => deleteTask(id))
+  ipcMain.handle('events:range', (_event, from: string, to: string) =>
+    eventStore.getEventsForRange(from, to)
+  )
+  ipcMain.handle('connections:list', () => eventStore.listConnections())
+  ipcMain.handle('connections:remove', (_event, id: string) => eventStore.removeConnection(id))
+  // Made-up events for trying the app out. Only while developing (npm run dev).
+  if (is.dev) ipcMain.handle('connections:sample', () => addSampleCalendar(eventStore))
 
   createWindow()
 
