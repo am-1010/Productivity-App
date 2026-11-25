@@ -61,6 +61,14 @@ describe('connections', () => {
   })
 })
 
+describe('setSecret', () => {
+  it('replaces the saved secret, such as after signing in again', () => {
+    const id = store.addConnection({ provider: 'google', name: 'Work', secret: Buffer.from('old') })
+    store.setSecret(id, Buffer.from('new'))
+    expect(store.getSecret(id)?.toString()).toBe('new')
+  })
+})
+
 describe('syncEvents', () => {
   it('updates events it already has, keeps their id, and drops ones no longer sent', () => {
     const id = store.addConnection({ provider: 'google', name: 'Work' })
@@ -85,6 +93,20 @@ describe('syncEvents', () => {
 
     expect(store.getEventsForRange('2026-11-23', '2026-11-23').map((e) => e.title)).toEqual([
       'Mine'
+    ])
+  })
+
+  it('drops the events of calendars that are no longer synced', () => {
+    const id = store.addConnection({ provider: 'google', name: 'Work' })
+    store.syncEvents(id, 'cal', [timed('a', 'Kept', at('2026-11-23', 9), at('2026-11-23', 10))])
+    store.syncEvents(id, 'old', [
+      { ...timed('b', 'Gone', at('2026-11-23', 11), at('2026-11-23', 12)), calendarId: 'old' }
+    ])
+
+    store.keepCalendars(id, ['cal'])
+
+    expect(store.getEventsForRange('2026-11-23', '2026-11-23').map((e) => e.title)).toEqual([
+      'Kept'
     ])
   })
 })

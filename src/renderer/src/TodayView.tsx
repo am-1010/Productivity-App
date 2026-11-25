@@ -67,6 +67,10 @@ export interface TodayViewProps {
   /** Connected calendars, for the Connections page. */
   connections?: Connection[]
   onRemoveConnection?: (id: string) => void
+  onConnectGoogle?: () => Promise<void>
+  onReconnectConnection?: (id: string) => Promise<void>
+  onCancelSignIn?: () => void
+  onSyncConnections?: () => Promise<void>
   /** Adds made-up events to try things out. Only passed while developing. */
   onAddSampleCalendar?: () => void
   /** Finished tasks for the Done tab, most recently finished first. */
@@ -911,6 +915,10 @@ export const TodayView: React.FC<TodayViewProps> = ({
   weekEvents = [],
   connections = [],
   onRemoveConnection,
+  onConnectGoogle,
+  onReconnectConnection,
+  onCancelSignIn,
+  onSyncConnections,
   onAddSampleCalendar,
   done: doneTasks = [],
   onSearch,
@@ -1376,6 +1384,10 @@ export const TodayView: React.FC<TodayViewProps> = ({
             <ConnectionsView
               connections={connections}
               onRemove={onRemoveConnection}
+              onConnectGoogle={onConnectGoogle}
+              onReconnect={onReconnectConnection}
+              onCancelSignIn={onCancelSignIn}
+              onSync={onSyncConnections}
               onAddSample={onAddSampleCalendar}
             />
           ) : activeNav === 'search' ? (

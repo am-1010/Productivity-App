@@ -30,8 +30,12 @@ export interface EventStore {
   removeConnection(id: string): void
   /** The connection's encrypted password or token. Main process only. */
   getSecret(id: string): Buffer | undefined
+  /** Replaces the connection's password or token, such as after signing in again. */
+  setSecret(id: string, secret: Buffer): void
   /** Makes `calendarId` of this connection hold exactly `events`, and records the sync. */
   syncEvents(connectionId: string, calendarId: string, events: SyncedEvent[]): void
+  /** Drops the events of any calendar of this connection not in `calendarIds`. */
+  keepCalendars(connectionId: string, calendarIds: string[]): void
   /** Records why a sync failed, so the Connections page can say so. */
   setSyncError(connectionId: string, message: string): void
   /** Events that touch any day from `from` to `to`, both included ('YYYY-MM-DD'). */
@@ -148,6 +152,10 @@ export function openEventStore(db: Database.Database): EventStore {
       return row?.secret ?? undefined
     },
 
+    setSecret(id: string, secret: Buffer): void {
+      db.prepare('UPDATE connection SET secret = ? WHERE id = ?').run(secret, id)
+    },
+
     syncEvents(connectionId: string, calendarId: string, events: SyncedEvent[]): void {
       // Keeps the app's own id for an event it already has, so later edits can find it.
       const upsert = db.prepare(
@@ -190,6 +198,16 @@ export function openEventStore(db: Database.Database): EventStore {
           connectionId
         )
       })()
+    },
+
+    keepCalendars(connectionId: string, calendarIds: string[]): void {
+      const keep = new Set(calendarIds)
+      const stored = db
+        .prepare('SELECT DISTINCT calendar_id FROM event WHERE connection_id = ?')
+        .all(connectionId) as { calendar_id: string }[]
+      const remove = db.prepare('DELETE FROM event WHERE connection_id = ? AND calendar_id = ?')
+      for (const row of stored)
+        if (!keep.has(row.calendar_id)) remove.run(connectionId, row.calendar_id)
     },
 
     setSyncError(connectionId: string, message: string): void {

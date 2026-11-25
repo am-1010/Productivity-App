@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import TodayView from './TodayView'
 import { addDays, localDay, startOfWeek } from './day'
 import type { CalendarEvent, Connection, Task } from '../../shared/types'
@@ -65,6 +65,13 @@ function App(): React.JSX.Element {
       .catch((err) => console.error('Failed to load calendars', err))
   }, [weekStart])
 
+  // Fetches the latest events from Google, then shows them. Errors are saved on
+  // the connection and shown on the COnnections page.
+  const syncCalendars = useCallback(
+    (): Promise<void> => window.api.syncConnections().then(loadCalendars),
+    [loadCalendars]
+  )
+
   const searchTasks = useCallback((query: string) => window.api.searchTasks(query), [])
 
   // Runs at startup, and again whenever the week view moves to another week.
@@ -75,6 +82,24 @@ function App(): React.JSX.Element {
   useEffect(() => {
     void loadCalendars()
   }, [loadCalendars])
+
+  // Syncs at startup and every 15 minutes while the app is open. Reads
+  // loadCalendars through a ref, so moving to another week doesn't sync again.
+  const loadCalendarsRef = useRef(loadCalendars)
+  useEffect(() => {
+    loadCalendarsRef.current = loadCalendars
+  }, [loadCalendars])
+  useEffect(() => {
+    const sync = (): void => {
+      window.api
+        .syncConnections()
+        .then(() => loadCalendarsRef.current())
+        .catch((err) => console.error('Failed to sync calendars', err))
+    }
+    sync()
+    const id = setInterval(sync, 15 * 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -100,6 +125,10 @@ function App(): React.JSX.Element {
           .then(loadCalendars)
           .catch((err) => console.error('Failed to remove connection', err))
       }
+      onConnectGoogle={() => window.api.connectGoogle().then(loadCalendars)}
+      onReconnectConnection={(id) => window.api.reconnectGoogle(id).then(loadCalendars)}
+      onCancelSignIn={() => void window.api.cancelGoogleSignIn()}
+      onSyncConnections={syncCalendars}
       onAddSampleCalendar={
         // The Sample calendar only exists while developing (npm run dev).
         import.meta.env.DEV

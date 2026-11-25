@@ -21,6 +21,14 @@ declare global {
       removeConnection: (id: string) => Promise<void>
       /** Only works while developing (npm run dev). */
       addSampleCalendar: () => Promise<void>
+      /** Fetches the latest events from every connected Google account. */
+      syncConnections: () => Promise<void>
+      /** Opens Google's sign-in in the browser; settles once signed in and synced. */
+      connectGoogle: () => Promise<void>
+      /** Signes in again after Google signed the app out. */
+      reconnectGoogle: (id: string) => Promise<void>
+      /** Stops a sign-in that is waiting for the browser. */
+      cancelGoogleSignIn: () => Promise<void>
     }
   }
 }

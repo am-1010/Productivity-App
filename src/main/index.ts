@@ -16,6 +16,13 @@ import {
   eventStore
 } from './db'
 import { addSampleCalendar } from './sampleCalendar'
+import {
+  cancelGoogleSignIn,
+  connectGoogle,
+  reconnectGoogle,
+  removeConnection,
+  syncAll
+} from './connections'
 import type { NewTaskInput } from '../shared/types'
 
 function createWindow(): void {
@@ -83,7 +90,11 @@ app.whenReady().then(() => {
     eventStore.getEventsForRange(from, to)
   )
   ipcMain.handle('connections:list', () => eventStore.listConnections())
-  ipcMain.handle('connections:remove', (_event, id: string) => eventStore.removeConnection(id))
+  ipcMain.handle('connections:remove', (_event, id: string) => removeConnection(id))
+  ipcMain.handle('connections:sync', () => syncAll())
+  ipcMain.handle('google:connect', () => connectGoogle())
+  ipcMain.handle('google:reconnect', (_event, id: string) => reconnectGoogle(id))
+  ipcMain.handle('google:cancel', () => cancelGoogleSignIn())
   // Made-up events for trying the app out. Only while developing (npm run dev).
   if (is.dev) ipcMain.handle('connections:sample', () => addSampleCalendar(eventStore))
 

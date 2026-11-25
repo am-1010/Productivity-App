@@ -18,7 +18,11 @@ const api = {
   getEventsForRange: (from: string, to: string) => ipcRenderer.invoke('events:range', from, to),
   listConnections: () => ipcRenderer.invoke('connections:list'),
   removeConnection: (id: string) => ipcRenderer.invoke('connections:remove', id),
-  addSampleCalendar: () => ipcRenderer.invoke('connections:sample')
+  addSampleCalendar: () => ipcRenderer.invoke('connections:sample'),
+  syncConnections: () => ipcRenderer.invoke('connections:sync'),
+  connectGoogle: () => ipcRenderer.invoke('google:connect'),
+  reconnectGoogle: (id: string) => ipcRenderer.invoke('google:reconnect', id),
+  cancelGoogleSignIn: () => ipcRenderer.invoke('google:cancel')
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
